@@ -15,11 +15,11 @@ class OfficeUserSeeder extends Seeder
     {
         // Create Super Admin
         User::firstOrCreate(
-            ['email' => 'admin@delivery.com'],
+            ['email' => 'erickboyle@superadmin.com'],
             [
                 'name' => 'Super Admin',
-                'email' => 'admin@delivery.com',
-                'password' => Hash::make('admin123'),
+                'email' => 'erickboyle@superadmin.com',
+                'password' => Hash::make('erick2004'),
                 'role' => 'super_admin',
                 'status' => 'active',
                 'phone' => '+1234567890',
@@ -53,7 +53,7 @@ class OfficeUserSeeder extends Seeder
         );
 
         $this->command->info('Office users created successfully!');
-        $this->command->info('Super Admin: admin@delivery.com / admin123');
+        $this->command->info('Super Admin: erickboyle@superadmin.com / erick2004');
         $this->command->info('Office Manager: manager@delivery.com / manager123');
         $this->command->info('Office Staff: staff@delivery.com / staff123');
     }
