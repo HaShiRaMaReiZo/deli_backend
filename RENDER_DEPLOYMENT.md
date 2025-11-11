@@ -5,6 +5,24 @@
 2. Your code pushed to a Git repository (GitHub, GitLab, or Bitbucket)
 3. A database (PostgreSQL recommended for Render)
 
+## Local Testing (Before Deployment)
+
+To test your Laravel app locally before deploying:
+
+**Option 1: Using localhost (for same PC access)**
+```bash
+php -S localhost:8000 -t public
+# Then access: http://localhost:8000
+```
+
+**Option 2: Using your IP (for network access)**
+```bash
+php -S 172.16.0.205:8000 -t public
+# Then access: http://172.16.0.205:8000
+```
+
+**Note**: `0.0.0.0` is only for Docker/container environments. For local testing, use `localhost` or your actual IP address.
+
 ## Step 1: Prepare Your Repository
 
 ### 1.1 Push your code to GitHub/GitLab/Bitbucket
@@ -45,16 +63,12 @@ git push -u origin main
    - **Region**: Same as your database
    - **Branch**: `main` (or your default branch)
    - **Root Directory**: `deli_backend` (if your repo has multiple folders)
-   - **Runtime**: `PHP`
-   - **Build Command**: 
-     ```bash
-     composer install --no-dev --optimize-autoloader && php artisan config:cache && php artisan route:cache && php artisan view:cache
-     ```
-   - **Start Command**: 
-     ```bash
-     php artisan serve --host=0.0.0.0 --port=$PORT
-     ```
+   - **Runtime**: `Docker` (PHP is not directly available, use Docker instead)
+   - **Build Command**: (Leave empty - Docker will handle it)
+   - **Start Command**: (Leave empty - Docker will handle it via docker-entrypoint.sh)
    - **Plan**: Free tier or paid
+   
+   **Note**: Since PHP is not available as a direct runtime, we'll use Docker. Make sure you have a `Dockerfile` in your `deli_backend` directory (see Dockerfile in the repo).
 
 ## Step 4: Configure Environment Variables
 
