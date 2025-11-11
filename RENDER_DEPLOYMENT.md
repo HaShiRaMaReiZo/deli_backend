@@ -86,11 +86,14 @@ LOG_CHANNEL=stack
 LOG_LEVEL=error
 
 DB_CONNECTION=pgsql
-DB_HOST=your-database-host.onrender.com
+# Either set DB_URL or the individual fields
+DB_URL=postgresql://user:password@host:5432/database
+# Or:
+DB_HOST=host
 DB_PORT=5432
-DB_DATABASE=your_database_name
-DB_USERNAME=your_database_user
-DB_PASSWORD=your_database_password
+DB_DATABASE=database
+DB_USERNAME=user
+DB_PASSWORD=password
 ```
 
 ### Get APP_KEY:
@@ -103,131 +106,35 @@ Copy the output and use it as `APP_KEY` value.
 ### Database Connection:
 Use the **Internal Database URL** from your PostgreSQL service:
 - Format: `postgresql://user:password@host:port/database`
-- Render will provide this in your database dashboard
+- Either paste to `DB_URL` or split into the individual fields above
 
-### Additional Variables (if needed):
-```
-BROADCAST_DRIVER=pusher
-CACHE_DRIVER=file
-QUEUE_CONNECTION=sync
-SESSION_DRIVER=file
-SESSION_LIFETIME=120
+## Step 5: Migrations on Free Plan (no Shell)
 
-PUSHER_APP_ID=your_pusher_app_id
-PUSHER_APP_KEY=your_pusher_key
-PUSHER_APP_SECRET=your_pusher_secret
-PUSHER_APP_CLUSTER=your_pusher_cluster
-
-FCM_SERVER_KEY=your_fcm_server_key
-FCM_SENDER_ID=your_fcm_sender_id
-```
-
-## Step 5: Set Up Storage Link
-
-Add this to your **Build Command** (or create a post-deploy script):
-```bash
-php artisan storage:link
-```
-
-## Step 6: Run Migrations
-
-### Option 1: Manual Migration (Recommended for first deployment)
-1. Go to your Web Service → **Shell** tab
-2. Run:
+The provided `docker-entrypoint.sh` automatically runs:
 ```bash
 php artisan migrate --force
 ```
+Every time the service starts. This allows you to use the free plan without Shell access.
 
-### Option 2: Auto Migration (Add to Build Command)
-Add to build command:
-```bash
-php artisan migrate --force
-```
-
-⚠️ **Warning**: Only use `--force` in production if you're sure about migrations.
-
-## Step 7: Configure Public Storage
+## Step 6: Persistent Storage
 
 1. In Render dashboard → Your Web Service → **Settings**
 2. Add a **Disk**:
    - **Mount Path**: `/opt/render/project/src/public/storage`
    - **Size**: 1GB (or as needed)
-   - This allows file uploads to persist
 
-## Step 8: Deploy
+## Step 7: Deploy
 
 1. Click **"Save Changes"** in your Web Service settings
 2. Render will automatically:
    - Clone your repository
-   - Run the build command
+   - Build the Docker image
    - Start your application
-3. Wait for deployment to complete (usually 2-5 minutes)
-4. Your app will be available at: `https://your-service-name.onrender.com`
-
-## Step 9: Verify Deployment
-
-1. Check the **Logs** tab for any errors
-2. Visit your app URL
-3. Test API endpoints:
-   ```bash
-   curl https://your-service-name.onrender.com/api/health
-   ```
-
-## Step 10: Update Your Mobile Apps
-
-Update the API base URL in your Flutter apps:
-- `merchant_app/lib/core/api_endpoints.dart`
-- `rider_app/lib/core/api_endpoints.dart`
-
-Change from:
-```dart
-static const String baseUrl = 'http://localhost:8000';
-```
-
-To:
-```dart
-static const String baseUrl = 'https://your-service-name.onrender.com';
-```
+3. Your app will be available at your Render URL
 
 ## Troubleshooting
 
-### Common Issues:
-
-1. **500 Error**: Check logs, usually missing APP_KEY or database connection
-2. **Database Connection Failed**: Verify DB credentials and use Internal Database URL
-3. **Storage Not Working**: Ensure storage disk is mounted
-4. **Migration Errors**: Check database permissions and connection
-5. **Slow First Request**: Normal on free tier (spins down after inactivity)
-
-### Useful Commands (via Shell):
-```bash
-# Check environment variables
-php artisan tinker
->>> config('app.env')
-
-# Clear cache
-php artisan config:clear
-php artisan cache:clear
-php artisan route:clear
-php artisan view:clear
-
-# Check database connection
-php artisan tinker
->>> DB::connection()->getPdo();
-```
-
-## Free Tier Limitations
-
-- Services spin down after 15 minutes of inactivity
-- First request after spin-down takes ~30 seconds
-- 750 hours/month free (enough for 1 service running 24/7)
-- Consider paid tier for production use
-
-## Next Steps
-
-1. Set up custom domain (optional)
-2. Configure SSL (automatic on Render)
-3. Set up monitoring and alerts
-4. Configure backups for database
-5. Set up CI/CD for automatic deployments
+- 500 error? Check **Logs** and verify env vars (APP_KEY, DB settings). The entrypoint auto-runs migrations.
+- Storage errors? Ensure the disk is mounted at `/opt/render/project/src/public/storage`.
+- Slow first request on free tier is expected (service spins down when idle).
 

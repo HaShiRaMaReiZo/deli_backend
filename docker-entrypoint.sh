@@ -9,6 +9,9 @@ php artisan view:cache || true
 # Create storage link
 php artisan storage:link || true
 
+# Run database migrations (safe on startup in Render free plan)
+php artisan migrate --force || true
+
 # Start PHP built-in server using PORT from environment (default to 8000)
 # Use php -S instead of artisan serve for better compatibility
 PORT=${PORT:-8000}
