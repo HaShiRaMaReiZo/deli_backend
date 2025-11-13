@@ -9,6 +9,7 @@ use App\Services\TrackingCodeService;
 use App\Events\PackageStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class PackageController extends Controller
 {
@@ -42,6 +43,7 @@ class PackageController extends Controller
             'packages.*.payment_type' => 'required|in:cod,prepaid',
             'packages.*.amount' => 'required|numeric|min:0',
             'packages.*.package_description' => 'nullable|string',
+            'packages.*.package_image' => 'nullable|string', // Base64 encoded image
         ]);
 
         $merchant = $request->user()->merchant;
@@ -54,6 +56,32 @@ class PackageController extends Controller
                 // Generate unique tracking code
                 $trackingCode = TrackingCodeService::generate();
 
+                // Handle package image (base64 to file)
+                $packageImageUrl = null;
+                if (!empty($packageData['package_image'])) {
+                    try {
+                        // Decode base64 image
+                        $imageData = base64_decode($packageData['package_image']);
+                        if ($imageData !== false) {
+                            // Generate unique filename
+                            $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
+                            $path = 'package_images/' . $filename;
+                            
+                            // Save to storage
+                            Storage::disk('public')->put($path, $imageData);
+                            
+                            // Generate full URL
+                            $packageImageUrl = url(Storage::url($path));
+                        }
+                    } catch (\Exception $e) {
+                        // Log error but don't fail package creation
+                        Log::warning('Failed to save package image', [
+                            'tracking_code' => $trackingCode,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+
                 $package = Package::create([
                     'tracking_code' => $trackingCode,
                     'merchant_id' => $merchant->id,
@@ -65,6 +93,7 @@ class PackageController extends Controller
                     'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
                     'payment_type' => $packageData['payment_type'],
                     'amount' => $packageData['amount'],
+                    'package_image' => $packageImageUrl,
                     'package_description' => $packageData['package_description'] ?? null,
                     'status' => 'registered',
                 ]);
