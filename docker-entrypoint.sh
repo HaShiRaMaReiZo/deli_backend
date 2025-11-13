@@ -16,7 +16,7 @@ echo "Migrations completed."
 
 # Seed database with initial users (super admin, etc.)
 echo "Seeding database with initial users..."
-php artisan db:seed --class=OfficeUserSeeder || true
+php artisan db:seed --class=OfficeUserSeeder --force || true
 echo "Database seeding completed."
 
 # Start PHP built-in server using PORT from environment (default to 8000)

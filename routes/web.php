@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Artisan;
 use App\Http\Controllers\Web\AuthController;
 use App\Http\Controllers\Web\OfficeController;
 
@@ -14,6 +15,29 @@ Route::get('/', function () {
 		}
 	}
 	return view('welcome');
+});
+
+// Temporary route to seed users (REMOVE AFTER FIRST USE)
+Route::get('/seed-users', function () {
+	try {
+		Artisan::call('db:seed', ['--class' => 'OfficeUserSeeder', '--force' => true]);
+		$output = Artisan::output();
+		return response()->json([
+			'success' => true,
+			'message' => 'Users seeded successfully!',
+			'output' => $output,
+			'users' => [
+				'Super Admin: erickboyle@superadmin.com / erick2004',
+				'Office Manager: manager@delivery.com / manager123',
+				'Office Staff: staff@delivery.com / staff123'
+			]
+		]);
+	} catch (\Exception $e) {
+		return response()->json([
+			'success' => false,
+			'message' => 'Error seeding users: ' . $e->getMessage()
+		], 500);
+	}
 });
 
 // Office Authentication
