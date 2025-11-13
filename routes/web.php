@@ -14,7 +14,8 @@ Route::get('/', function () {
 			return redirect()->route('office.dashboard');
 		}
 	}
-	return view('welcome');
+	// If not authenticated, redirect to office login
+	return redirect()->route('office.login');
 });
 
 // Temporary route to seed users (REMOVE AFTER FIRST USE)
