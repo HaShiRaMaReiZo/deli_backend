@@ -272,13 +272,21 @@ class PackageController extends Controller
                     'created_at' => now(),
                 ]);
 
-                // Broadcast status change via WebSocket
-                event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
+                // Broadcast status change via WebSocket (wrap in try-catch to prevent failure)
+                try {
+                    event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
+                } catch (\Exception $eventException) {
+                    // Log but don't fail the request if event fails
+                    Log::warning('Failed to broadcast package status change', [
+                        'package_id' => $package->id,
+                        'error' => $eventException->getMessage(),
+                    ]);
+                }
 
                 $assigned[] = $package->id;
             }
 
-            return response()->json([
+            $responseData = [
                 'message' => 'Rider assigned for pickup from merchant successfully',
                 'merchant' => [
                     'id' => $merchant->id,
@@ -291,7 +299,21 @@ class PackageController extends Controller
                 ],
                 'assigned_count' => count($assigned),
                 'assigned_package_ids' => $assigned,
-            ], 200);
+            ];
+
+            // Log successful assignment
+            Log::info('Rider assigned for pickup', [
+                'merchant_id' => $merchantId,
+                'rider_id' => $rider->id,
+                'assigned_count' => count($assigned),
+            ]);
+
+            // Ensure response is sent properly with explicit headers
+            $response = response()->json($responseData, 200);
+            $response->header('Content-Type', 'application/json');
+            $response->header('Cache-Control', 'no-cache, no-store, must-revalidate');
+            
+            return $response;
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
