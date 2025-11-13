@@ -97,6 +97,12 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Set rider status to 'available' when they log in
+        if ($user->role === 'rider' && $user->rider) {
+            $user->rider->status = 'available';
+            $user->rider->save();
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         $user->load($user->role);
@@ -110,7 +116,15 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        
+        // Set rider status to 'offline' when they log out
+        if ($user->role === 'rider' && $user->rider) {
+            $user->rider->status = 'offline';
+            $user->rider->save();
+        }
+        
+        $user->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Logged out successfully',

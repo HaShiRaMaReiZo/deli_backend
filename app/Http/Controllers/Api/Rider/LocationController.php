@@ -26,6 +26,12 @@ class LocationController extends Controller
         $rider->current_latitude = $request->latitude;
         $rider->current_longitude = $request->longitude;
         $rider->last_location_update = now();
+        
+        // Set rider status to 'available' if they're offline (they're using the app)
+        if ($rider->status === 'offline') {
+            $rider->status = 'available';
+        }
+        
         $rider->save();
 
         // Store location history
