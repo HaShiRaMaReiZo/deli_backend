@@ -227,6 +227,8 @@ DB_PASSWORD=your_password
 
 # Session & Cache (use database for free tier)
 SESSION_DRIVER=database
+SESSION_SECURE_COOKIE=true
+SESSION_SAME_SITE=lax
 CACHE_DRIVER=database
 QUEUE_CONNECTION=database
 

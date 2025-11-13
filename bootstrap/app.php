@@ -17,8 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\CheckRole::class,
         ]);
         
-        // Configure guest middleware redirect
-        $middleware->redirectGuestsTo(fn () => route('office.dashboard'));
+        // Configure guest middleware redirect (redirect to login, not dashboard)
+        $middleware->redirectGuestsTo(fn () => route('office.login'));
         
         // Enable CORS for API routes
         $middleware->api(prepend: [
