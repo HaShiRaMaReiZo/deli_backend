@@ -1,6 +1,6 @@
 # Deli Backend - Deployment Guide
 
-Complete guide for deploying the Deli backend to Render with MySQL.
+Complete guide for deploying the Deli backend to Render with PostgreSQL.
 
 ## Table of Contents
 1. [Prerequisites](#prerequisites)
@@ -9,6 +9,7 @@ Complete guide for deploying the Deli backend to Render with MySQL.
 4. [Deploy to Render](#deploy-to-render)
 5. [Environment Variables](#environment-variables)
 6. [Troubleshooting](#troubleshooting)
+7. [Check Database Data](#check-database-data)
 
 ---
 
@@ -332,11 +333,46 @@ After deployment, the database is seeded with a super admin:
 
 ---
 
+## Check Database Data
+
+After deployment, you may want to verify that:
+- ✅ Migrations ran successfully
+- ✅ Users were created by the seeder
+- ✅ Tables exist and have data
+
+### Quick Methods:
+
+**Method 1: Using psql (Recommended)**
+- See **[PSQL_SETUP.md](./PSQL_SETUP.md)** for detailed installation and connection guide
+- Quick connect: `psql "postgresql://user:password@host:port/database"`
+- Or use the provided script: `.\connect-postgres.ps1`
+
+**Method 2: Using pgAdmin (GUI)**
+- Install pgAdmin from https://www.pgadmin.org/
+- Connect using your Render database credentials
+- Browse tables and run queries visually
+
+**Method 3: Using DBeaver (Universal Tool)**
+- Download from https://dbeaver.io/download/
+- Create PostgreSQL connection with Render credentials
+- Browse and query your database
+
+**Method 4: Via Laravel Route (Temporary)**
+- Add a `/check-db` route to view data (see PSQL_SETUP.md for code)
+- Visit: `https://your-app.onrender.com/check-db`
+
+### Expected Users After Seeding:
+- **Super Admin**: `erickboyle@superadmin.com` / `erick2004`
+- **Office Manager**: `manager@delivery.com` / `manager123`
+- **Office Staff**: `staff@delivery.com` / `staff123`
+
+---
+
 ## Support
 
 For issues:
 1. Check Render **Logs** tab
 2. Verify environment variables
-3. Test database connection from MySQL Workbench
+3. Check database connection using psql (see PSQL_SETUP.md)
 4. Review this guide's troubleshooting section
 
