@@ -18,9 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\CheckRole::class,
         ]);
         
-        // Configure guest middleware redirect for WEB routes only
-        // API routes will be handled by exception handler
-        $middleware->redirectGuestsTo(fn () => route('office.login'));
+        // Configure guest middleware redirect for WEB routes only (not API routes)
+        $middleware->redirectGuestsTo(function ($request) {
+            // Don't redirect API routes, even if accessed from browser
+            if ($request->is('api/*')) {
+                return null; // Let exception handler deal with it
+            }
+            return route('office.login');
+        });
         
         // Enable CORS for API routes
         $middleware->api(prepend: [
@@ -29,12 +34,19 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Handle unauthenticated API requests with JSON response instead of redirect
+        // This works even when API is accessed from a web browser
         $exceptions->respond(function ($request, Throwable $e) {
+            // Check if it's an API route (even if accessed from browser)
             if ($e instanceof AuthenticationException && $request->is('api/*')) {
                 return response()->json([
                     'message' => 'Unauthenticated.',
                     'error' => 'Authentication required'
                 ], 401);
             }
+        });
+        
+        // Also handle other exceptions for API routes to return JSON
+        $exceptions->shouldRenderJsonWhen(function ($request, Throwable $e) {
+            return $request->is('api/*') || $request->expectsJson();
         });
     })->create();
