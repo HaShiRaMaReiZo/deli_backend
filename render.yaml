@@ -1,11 +1,10 @@
 services:
   - type: web
     name: deli-backend
-    env: php
+    env: docker
     region: oregon
     plan: free
-    buildCommand: composer install --no-dev --optimize-autoloader && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan storage:link
-    startCommand: php artisan serve --host=0.0.0.0 --port=$PORT
+    # Build and start commands are handled by Dockerfile and docker-entrypoint.sh
     envVars:
       - key: APP_ENV
         value: production
@@ -14,14 +13,14 @@ services:
       - key: LOG_LEVEL
         value: error
       - key: DB_CONNECTION
-        value: pgsql
-      # Add other environment variables in Render dashboard
-      # APP_KEY, DB credentials, etc.
+        value: mysql
+      # Add other environment variables in Render dashboard:
+      # APP_KEY, DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD, etc.
 
 databases:
-  - name: deli-database
+  - name: deli-mysql-database
     databaseName: deli_db
     user: deli_user
     plan: free
     region: oregon
-
+    databaseType: mysql
