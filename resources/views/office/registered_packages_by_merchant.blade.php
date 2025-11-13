@@ -178,17 +178,39 @@
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer {{ $apiToken }}',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({ rider_id: riderId })
         })
-        .then(res => {
+        .then(async res => {
+            // Get response text first to check if it's empty
+            const text = await res.text();
+            
             if (!res.ok) {
-                return res.json().then(err => {
-                    throw new Error(err.message || 'Failed to assign rider');
-                });
+                // Try to parse as JSON, fallback to text
+                let errorMessage = 'Failed to assign rider';
+                try {
+                    const error = JSON.parse(text);
+                    errorMessage = error.message || error.error || errorMessage;
+                } catch (e) {
+                    errorMessage = text || `HTTP ${res.status}: ${res.statusText}`;
+                }
+                throw new Error(errorMessage);
             }
-            return res.json();
+            
+            // Check if response is empty
+            if (!text || text.trim() === '') {
+                throw new Error('Empty response from server');
+            }
+            
+            // Try to parse JSON
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error('Response text:', text);
+                throw new Error('Invalid JSON response from server');
+            }
         })
         .then(data => {
             alert('Rider assigned successfully for pickup from merchant!');
@@ -196,7 +218,7 @@
         })
         .catch(err => {
             alert('Error assigning rider: ' + err.message);
-            console.error(err);
+            console.error('Full error:', err);
         });
     }
 </script>
