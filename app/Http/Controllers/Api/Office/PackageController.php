@@ -9,6 +9,7 @@ use App\Models\RiderAssignment;
 use App\Events\PackageStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class PackageController extends Controller
 {
@@ -246,46 +247,58 @@ class PackageController extends Controller
 
             $assigned = [];
 
-            foreach ($packages as $package) {
-                // Update package - assign for pickup
-                $package->current_rider_id = $rider->id;
-                $package->status = 'assigned_to_rider'; // Status for pickup assignment
-                $package->assigned_at = now();
-                $package->save();
+            // Use database transaction to ensure data consistency
+            DB::beginTransaction();
+            try {
+                foreach ($packages as $package) {
+                    // Update package - assign for pickup
+                    $package->current_rider_id = $rider->id;
+                    $package->status = 'assigned_to_rider'; // Status for pickup assignment
+                    $package->assigned_at = now();
+                    $package->save();
 
-                // Create assignment record
-                RiderAssignment::create([
-                    'package_id' => $package->id,
-                    'rider_id' => $rider->id,
-                    'assigned_by_user_id' => $request->user()->id,
-                    'assigned_at' => now(),
-                    'status' => 'assigned', // Assignment status
-                ]);
+                    // Create assignment record
+                    RiderAssignment::create([
+                        'package_id' => $package->id,
+                        'rider_id' => $rider->id,
+                        'assigned_by_user_id' => $request->user()->id,
+                        'assigned_at' => now(),
+                        'status' => 'assigned', // Assignment status
+                    ]);
 
-                // Log status history
-                PackageStatusHistory::create([
-                    'package_id' => $package->id,
-                    'status' => 'assigned_to_rider',
-                    'changed_by_user_id' => $request->user()->id,
-                    'changed_by_type' => 'office',
-                    'notes' => "Assigned to rider {$rider->name} for pickup from merchant {$merchant->business_name}",
-                    'created_at' => now(),
-                ]);
+                    // Log status history
+                    PackageStatusHistory::create([
+                        'package_id' => $package->id,
+                        'status' => 'assigned_to_rider',
+                        'changed_by_user_id' => $request->user()->id,
+                        'changed_by_type' => 'office',
+                        'notes' => "Assigned to rider {$rider->name} for pickup from merchant {$merchant->business_name}",
+                        'created_at' => now(),
+                    ]);
 
-                // Broadcast status change via WebSocket (wrap in try-catch to prevent failure)
+                    $assigned[] = $package->id;
+                }
+
+                DB::commit();
+            } catch (\Exception $dbException) {
+                DB::rollBack();
+                throw $dbException;
+            }
+
+            // Broadcast events after successful database commit (don't let this fail the request)
+            foreach ($assigned as $packageId) {
                 try {
-                    event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
+                    event(new PackageStatusChanged($packageId, 'assigned_to_rider', $merchantId));
                 } catch (\Exception $eventException) {
                     // Log but don't fail the request if event fails
                     Log::warning('Failed to broadcast package status change', [
-                        'package_id' => $package->id,
+                        'package_id' => $packageId,
                         'error' => $eventException->getMessage(),
                     ]);
                 }
-
-                $assigned[] = $package->id;
             }
 
+            // Prepare response data
             $responseData = [
                 'message' => 'Rider assigned for pickup from merchant successfully',
                 'merchant' => [
@@ -308,12 +321,8 @@ class PackageController extends Controller
                 'assigned_count' => count($assigned),
             ]);
 
-            // Ensure response is sent properly with explicit headers
-            $response = response()->json($responseData, 200);
-            $response->header('Content-Type', 'application/json');
-            $response->header('Cache-Control', 'no-cache, no-store, must-revalidate');
-            
-            return $response;
+            // Return JSON response directly
+            return response()->json($responseData, 200);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
