@@ -6,8 +6,19 @@ php artisan config:cache || true
 php artisan route:cache || true
 php artisan view:cache || true
 
-# Create storage link
+# Create storage directories if they don't exist
+mkdir -p storage/app/public/package_images || true
+mkdir -p storage/app/public/delivery_proofs || true
+mkdir -p storage/app/public/cod_proofs || true
+
+# Create storage link (symlink from public/storage to storage/app/public)
 php artisan storage:link || true
+
+# Verify symlink exists
+if [ ! -L public/storage ]; then
+    echo "Warning: Storage symlink not created. Attempting manual creation..."
+    ln -sf ../storage/app/public public/storage || true
+fi
 
 # Run database migrations (safe on startup in Render free plan)
 echo "Running database migrations..."

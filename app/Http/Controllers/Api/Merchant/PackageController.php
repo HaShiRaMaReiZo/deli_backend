@@ -62,22 +62,49 @@ class PackageController extends Controller
                     try {
                         // Decode base64 image
                         $imageData = base64_decode($packageData['package_image']);
-                        if ($imageData !== false) {
+                        if ($imageData !== false && strlen($imageData) > 0) {
+                            // Ensure package_images directory exists
+                            $directory = 'package_images';
+                            if (!Storage::disk('public')->exists($directory)) {
+                                Storage::disk('public')->makeDirectory($directory);
+                            }
+                            
                             // Generate unique filename
                             $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
-                            $path = 'package_images/' . $filename;
+                            $path = $directory . '/' . $filename;
                             
                             // Save to storage
-                            Storage::disk('public')->put($path, $imageData);
+                            $saved = Storage::disk('public')->put($path, $imageData);
                             
-                            // Generate full URL
-                            $packageImageUrl = url(Storage::url($path));
+                            if ($saved) {
+                                // Generate full URL - use APP_URL from config
+                                $baseUrl = config('app.url', env('APP_URL', 'http://localhost'));
+                                $packageImageUrl = rtrim($baseUrl, '/') . '/storage/' . $path;
+                                
+                                // Log success for debugging
+                                Log::info('Package image saved successfully', [
+                                    'tracking_code' => $trackingCode,
+                                    'path' => $path,
+                                    'url' => $packageImageUrl,
+                                    'size' => strlen($imageData)
+                                ]);
+                            } else {
+                                Log::warning('Failed to save package image - put() returned false', [
+                                    'tracking_code' => $trackingCode,
+                                    'path' => $path
+                                ]);
+                            }
+                        } else {
+                            Log::warning('Invalid base64 image data', [
+                                'tracking_code' => $trackingCode
+                            ]);
                         }
                     } catch (\Exception $e) {
                         // Log error but don't fail package creation
-                        Log::warning('Failed to save package image', [
+                        Log::error('Failed to save package image', [
                             'tracking_code' => $trackingCode,
-                            'error' => $e->getMessage()
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
                         ]);
                     }
                 }
