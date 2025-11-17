@@ -50,6 +50,7 @@ class PackageController extends Controller
         $packages = $request->packages;
         $createdPackages = [];
         $errors = [];
+        $imageUploadErrors = []; // Track image upload errors
 
         foreach ($packages as $index => $packageData) {
             try {
@@ -58,6 +59,7 @@ class PackageController extends Controller
 
                 // Handle package image (base64 to Supabase)
                 $packageImageUrl = null;
+                $imageError = null;
                 if (!empty($packageData['package_image'])) {
                     try {
                         $base64String = $packageData['package_image'];
@@ -71,49 +73,72 @@ class PackageController extends Controller
                         $imageData = base64_decode($base64String, true); // strict mode
                         
                         if ($imageData === false) {
+                            $imageError = 'Failed to decode base64 image data';
                             Log::warning('Failed to decode base64 image', [
                                 'tracking_code' => $trackingCode,
                                 'base64_length' => strlen($packageData['package_image']),
                                 'base64_preview' => substr($packageData['package_image'], 0, 50) . '...'
                             ]);
                         } elseif (strlen($imageData) === 0) {
+                            $imageError = 'Decoded image data is empty';
                             Log::warning('Decoded image data is empty', [
                                 'tracking_code' => $trackingCode
                             ]);
                         } else {
-                            // Generate unique filename
-                            $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
-                            $path = 'package_images/' . $filename;
+                            // Check if Supabase is configured
+                            $supabaseUrl = env('SUPABASE_URL');
+                            $supabaseKey = env('SUPABASE_KEY');
                             
-                            // Upload to Supabase Storage
-                            $supabase = new SupabaseStorageService();
-                            $packageImageUrl = $supabase->upload($path, $imageData);
-                            
-                            if ($packageImageUrl) {
-                                Log::info('Package image uploaded to Supabase', [
+                            if (empty($supabaseUrl) || empty($supabaseKey)) {
+                                $imageError = 'Supabase not configured (missing SUPABASE_URL or SUPABASE_KEY)';
+                                Log::error('Supabase credentials missing', [
                                     'tracking_code' => $trackingCode,
-                                    'path' => $path,
-                                    'url' => $packageImageUrl,
-                                    'size' => strlen($imageData)
+                                    'supabase_url_set' => !empty($supabaseUrl),
+                                    'supabase_key_set' => !empty($supabaseKey)
                                 ]);
                             } else {
-                                Log::warning('Failed to upload package image to Supabase', [
-                                    'tracking_code' => $trackingCode,
-                                    'path' => $path,
-                                    'image_size' => strlen($imageData),
-                                    'supabase_url' => env('SUPABASE_URL'),
-                                    'supabase_key_set' => !empty(env('SUPABASE_KEY')),
-                                    'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images')
-                                ]);
+                                // Generate unique filename
+                                $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
+                                $path = 'package_images/' . $filename;
+                                
+                                // Upload to Supabase Storage
+                                $supabase = new SupabaseStorageService();
+                                $packageImageUrl = $supabase->upload($path, $imageData);
+                                
+                                if ($packageImageUrl) {
+                                    Log::info('Package image uploaded to Supabase', [
+                                        'tracking_code' => $trackingCode,
+                                        'path' => $path,
+                                        'url' => $packageImageUrl,
+                                        'size' => strlen($imageData)
+                                    ]);
+                                } else {
+                                    $imageError = 'Supabase upload failed (check logs for details)';
+                                    Log::warning('Failed to upload package image to Supabase', [
+                                        'tracking_code' => $trackingCode,
+                                        'path' => $path,
+                                        'image_size' => strlen($imageData),
+                                        'supabase_url' => $supabaseUrl,
+                                        'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images')
+                                    ]);
+                                }
                             }
                         }
                     } catch (\Exception $e) {
-                        // Log error but don't fail package creation
+                        $imageError = 'Exception: ' . $e->getMessage();
                         Log::error('Failed to upload package image', [
                             'tracking_code' => $trackingCode,
                             'error' => $e->getMessage(),
                             'trace' => $e->getTraceAsString()
                         ]);
+                    }
+                    
+                    // Store image error for this package
+                    if ($imageError) {
+                        $imageUploadErrors[] = [
+                            'tracking_code' => $trackingCode,
+                            'error' => $imageError
+                        ];
                     }
                 }
 
@@ -161,6 +186,7 @@ class PackageController extends Controller
             'failed_count' => count($errors),
             'packages' => $createdPackages,
             'errors' => $errors,
+            'image_upload_errors' => $imageUploadErrors, // Include image upload errors
         ], count($createdPackages) > 0 ? 201 : 422);
     }
 
