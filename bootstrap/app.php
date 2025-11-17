@@ -16,10 +16,17 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function ($schedule) {
         // Clean up images older than 90 days daily at 2 AM
         // Only schedule if Supabase is configured
+        // NOTE: Scheduled commands require a running process, which may not work on Render free tier
+        // Consider using Render's cron jobs or a paid plan for scheduled tasks
         if (env('SUPABASE_URL') && env('SUPABASE_KEY')) {
-            $schedule->command('images:cleanup --days=90')
-                ->dailyAt('02:00')
-                ->timezone('UTC');
+            try {
+                $schedule->command('images:cleanup --days=90')
+                    ->dailyAt('02:00')
+                    ->timezone('UTC');
+            } catch (\Exception $e) {
+                // Silently fail if scheduling is not available (e.g., Render free tier)
+                // This prevents startup errors
+            }
         }
     })
     ->withMiddleware(function (Middleware $middleware): void {

@@ -51,9 +51,25 @@ php artisan db:seed --class=OfficeUserSeeder --force || {
 # Use php -S instead of artisan serve for better compatibility
 PORT=${PORT:-8000}
 echo "Starting PHP server on port $PORT..."
-echo "Server is ready!"
+
+# Verify public directory exists
+if [ ! -d "public" ]; then
+    echo "ERROR: public directory not found!"
+    exit 1
+fi
+
+# Verify index.php exists
+if [ ! -f "public/index.php" ]; then
+    echo "ERROR: public/index.php not found!"
+    exit 1
+fi
+
+echo "Server is ready! Listening on port $PORT"
+echo "Health check endpoint: http://0.0.0.0:$PORT/up"
 
 # Use exec to replace shell process with PHP server
 # This ensures proper signal handling and prevents restart loops
-exec php -S 0.0.0.0:$PORT -t public
+# The server will run indefinitely until stopped
+# Redirect stderr to stdout so Render can see all logs
+exec php -S 0.0.0.0:$PORT -t public 2>&1
 
