@@ -74,8 +74,29 @@ class SupabaseStorageService
                 return $publicUrl;
             } else {
                 $errorBody = $response->body();
-                $errorJson = json_decode($errorBody, true);
-                $supabaseError = $errorJson['message'] ?? $errorJson['error'] ?? $errorBody;
+                
+                // Try to decode JSON, but handle non-JSON responses (binary data, HTML, etc.)
+                $errorJson = null;
+                $supabaseError = null;
+                
+                if (!empty($errorBody)) {
+                    // Check if response is valid JSON
+                    $errorJson = json_decode($errorBody, true);
+                    
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($errorJson)) {
+                        // Valid JSON response
+                        $supabaseError = $errorJson['message'] ?? $errorJson['error'] ?? $errorJson['error_description'] ?? 'Unknown error';
+                    } else {
+                        // Not JSON - might be binary data, HTML, or plain text
+                        // Try to extract readable text (first 200 chars)
+                        $readableText = mb_convert_encoding(substr($errorBody, 0, 200), 'UTF-8', 'UTF-8');
+                        // Remove non-printable characters
+                        $readableText = preg_replace('/[\x00-\x1F\x7F]/', '', $readableText);
+                        $supabaseError = !empty($readableText) ? $readableText : 'Non-JSON response received';
+                    }
+                } else {
+                    $supabaseError = 'Empty response from Supabase';
+                }
                 
                 $errorMessage = "HTTP {$response->status()}: {$supabaseError}";
                 
@@ -84,7 +105,7 @@ class SupabaseStorageService
                     'bucket' => $this->bucket,
                     'status' => $response->status(),
                     'status_text' => $response->reason(),
-                    'response_body' => $errorBody,
+                    'response_body_preview' => mb_convert_encoding(substr($errorBody, 0, 500), 'UTF-8', 'UTF-8'),
                     'error_message' => $supabaseError,
                     'upload_url' => $uploadUrl,
                 ]);
