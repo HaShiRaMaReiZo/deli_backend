@@ -114,24 +114,32 @@ class PackageController extends Controller
                                         'size' => strlen($imageData)
                                     ]);
                                 } else {
-                                    $imageError = $supabaseErrorMessage ?? 'Supabase upload failed (unknown error)';
+                                    // Sanitize error message to ensure valid UTF-8 for JSON encoding
+                                    $sanitizedError = $supabaseErrorMessage ?? 'Supabase upload failed (unknown error)';
+                                    $sanitizedError = mb_convert_encoding($sanitizedError, 'UTF-8', 'UTF-8');
+                                    $sanitizedError = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $sanitizedError);
+                                    $imageError = substr($sanitizedError, 0, 200);
+                                    
                                     Log::warning('Failed to upload package image to Supabase', [
                                         'tracking_code' => $trackingCode,
                                         'path' => $path,
                                         'image_size' => strlen($imageData),
                                         'supabase_url' => $supabaseUrl,
                                         'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images'),
-                                        'error' => $supabaseErrorMessage
+                                        'error' => $imageError
                                     ]);
                                 }
                             }
                         }
                     } catch (\Exception $e) {
-                        $imageError = 'Exception: ' . $e->getMessage();
+                        // Sanitize exception message to ensure valid UTF-8 for JSON encoding
+                        $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+                        $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
+                        $imageError = 'Exception: ' . substr($exceptionMsg, 0, 200);
+                        
                         Log::error('Failed to upload package image', [
                             'tracking_code' => $trackingCode,
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString()
+                            'error' => $imageError,
                         ]);
                     }
                     

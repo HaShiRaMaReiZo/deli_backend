@@ -98,26 +98,33 @@ class SupabaseStorageService
                     $supabaseError = 'Empty response from Supabase';
                 }
                 
-                $errorMessage = "HTTP {$response->status()}: {$supabaseError}";
+                // Sanitize error message to ensure it's valid UTF-8 and can be JSON encoded
+                $sanitizedError = mb_convert_encoding($supabaseError, 'UTF-8', 'UTF-8');
+                $sanitizedError = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $sanitizedError);
+                $sanitizedError = substr($sanitizedError, 0, 200); // Limit length
+                $errorMessage = "HTTP {$response->status()}: " . $sanitizedError;
                 
                 Log::error('Supabase upload failed', [
                     'path' => $path,
                     'bucket' => $this->bucket,
                     'status' => $response->status(),
                     'status_text' => $response->reason(),
-                    'response_body_preview' => mb_convert_encoding(substr($errorBody, 0, 500), 'UTF-8', 'UTF-8'),
-                    'error_message' => $supabaseError,
+                    'error_message' => $sanitizedError,
                     'upload_url' => $uploadUrl,
                 ]);
                 return null;
             }
         } catch (\Exception $e) {
-            $errorMessage = 'Exception: ' . $e->getMessage();
+            // Sanitize exception message to ensure valid UTF-8
+            $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+            $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
+            $exceptionMsg = substr($exceptionMsg, 0, 200);
+            $errorMessage = 'Exception: ' . $exceptionMsg;
+            
             Log::error('Supabase upload exception', [
                 'path' => $path,
                 'bucket' => $this->bucket,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'error' => $exceptionMsg,
             ]);
             return null;
         }
