@@ -12,55 +12,94 @@ class LocationController extends Controller
 {
     public function update(Request $request)
     {
-        $request->validate([
-            'latitude' => 'required|numeric',
-            'longitude' => 'required|numeric',
-            'speed' => 'nullable|numeric',
-            'heading' => 'nullable|numeric',
-            'package_id' => 'nullable|exists:packages,id',
-        ]);
+        try {
+            $request->validate([
+                'latitude' => 'required|numeric',
+                'longitude' => 'required|numeric',
+                'speed' => 'nullable|numeric',
+                'heading' => 'nullable|numeric',
+                'package_id' => 'nullable|exists:packages,id',
+            ]);
 
-        $rider = $request->user()->rider;
+            $rider = $request->user()->rider;
 
-        // Update rider's current location
-        $rider->current_latitude = $request->latitude;
-        $rider->current_longitude = $request->longitude;
-        $rider->last_location_update = now();
-        
-        // Set rider status to 'available' if they're offline (they're using the app)
-        if ($rider->status === 'offline') {
-            $rider->status = 'available';
+            if (!$rider) {
+                return response()->json([
+                    'message' => 'Rider profile not found',
+                ], 404);
+            }
+
+            // Update rider's current location
+            $rider->current_latitude = $request->latitude;
+            $rider->current_longitude = $request->longitude;
+            $rider->last_location_update = now();
+            
+            // Set rider status to 'available' if they're offline (they're using the app)
+            if ($rider->status === 'offline') {
+                $rider->status = 'available';
+            }
+            
+            $rider->save();
+
+            // Store location history (don't fail if this fails)
+            try {
+                RiderLocation::create([
+                    'rider_id' => $rider->id,
+                    'package_id' => $request->package_id,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'speed' => $request->speed,
+                    'heading' => $request->heading,
+                    'created_at' => now(),
+                ]);
+            } catch (\Exception $e) {
+                // Log but don't fail - location history is optional
+                \Illuminate\Support\Facades\Log::warning('Failed to save location history', [
+                    'rider_id' => $rider->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            // Broadcast location update via WebSocket (don't fail if this fails)
+            try {
+                event(new RiderLocationUpdated(
+                    $rider->id,
+                    $request->latitude,
+                    $request->longitude,
+                    $request->package_id
+                ));
+            } catch (\Exception $e) {
+                // Log but don't fail - WebSocket is optional
+                \Illuminate\Support\Facades\Log::warning('Failed to broadcast location update', [
+                    'rider_id' => $rider->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Location updated successfully',
+                'location' => [
+                    'latitude' => $rider->current_latitude,
+                    'longitude' => $rider->current_longitude,
+                    'last_update' => $rider->last_location_update,
+                ],
+            ])->header('Content-Type', 'application/json');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422)->header('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Location update failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to update location',
+                'error' => $e->getMessage(),
+            ], 500)->header('Content-Type', 'application/json');
         }
-        
-        $rider->save();
-
-        // Store location history
-        RiderLocation::create([
-            'rider_id' => $rider->id,
-            'package_id' => $request->package_id,
-            'latitude' => $request->latitude,
-            'longitude' => $request->longitude,
-            'speed' => $request->speed,
-            'heading' => $request->heading,
-            'created_at' => now(),
-        ]);
-
-        // Broadcast location update via WebSocket
-        event(new RiderLocationUpdated(
-            $rider->id,
-            $request->latitude,
-            $request->longitude,
-            $request->package_id
-        ));
-
-        return response()->json([
-            'message' => 'Location updated successfully',
-            'location' => [
-                'latitude' => $rider->current_latitude,
-                'longitude' => $rider->current_longitude,
-                'last_update' => $rider->last_location_update,
-            ],
-        ]);
     }
 
     public function current(Request $request)

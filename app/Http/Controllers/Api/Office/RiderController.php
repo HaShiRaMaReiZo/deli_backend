@@ -46,7 +46,7 @@ class RiderController extends Controller
     public function locations(Request $request)
     {
         // Get all active riders with their current locations
-        // Don't load unnecessary relationships to improve performance
+        // Only show riders who have sent at least one location update
         $riders = Rider::whereNotNull('current_latitude')
             ->whereNotNull('current_longitude')
             ->where('status', '!=', 'offline')
@@ -73,7 +73,10 @@ class RiderController extends Controller
                 'last_location_update' => $rider->last_location_update,
                 'package_count' => $packageCounts[$rider->id] ?? 0,
             ];
-        });
+        })->filter(function ($rider) {
+            // Only return riders that have actual location data (for map display)
+            return $rider['latitude'] !== null && $rider['longitude'] !== null;
+        })->values();
 
         return response()->json([
             'riders' => $locations,
