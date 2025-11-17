@@ -10,7 +10,7 @@ php artisan route:cache || true
 php artisan view:cache || true
 
 # Create storage directories if they don't exist
-mkdir -p storage/app/public/package_images || true
+# Note: package_images are now stored in Supabase, but keeping delivery_proofs and cod_proofs local for now
 mkdir -p storage/app/public/delivery_proofs || true
 mkdir -p storage/app/public/cod_proofs || true
 

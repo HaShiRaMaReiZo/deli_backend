@@ -116,19 +116,33 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $user = $request->user();
-        
-        // Set rider status to 'offline' when they log out
-        if ($user->role === 'rider' && $user->rider) {
-            $user->rider->status = 'offline';
-            $user->rider->save();
+        try {
+            $user = $request->user();
+            
+            if ($user) {
+                // Set rider status to 'offline' when they log out
+                if ($user->role === 'rider' && $user->rider) {
+                    $user->rider->status = 'offline';
+                    $user->rider->save();
+                }
+                
+                // Delete the current access token
+                $token = $user->currentAccessToken();
+                if ($token) {
+                    $token->delete();
+                }
+            }
+        } catch (\Exception $e) {
+            // Log error but still return success to prevent client from hanging
+            \Illuminate\Support\Facades\Log::warning('Logout error', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()?->id ?? null,
+            ]);
         }
-        
-        $user->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Logged out successfully',
-        ]);
+        ])->header('Content-Type', 'application/json');
     }
 
     public function user(Request $request)

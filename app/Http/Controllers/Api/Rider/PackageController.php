@@ -10,7 +10,6 @@ use App\Models\DeliveryProof;
 use App\Models\CodCollection;
 use App\Events\PackageStatusChanged;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class PackageController extends Controller
 {

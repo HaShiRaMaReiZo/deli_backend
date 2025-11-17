@@ -18,7 +18,7 @@ Route::get('/', function () {
 	return redirect()->route('office.login');
 });
 
-// Temporary route to seed users (REMOVE AFTER FIRST USE)
+// Route to seed users (useful for resetting database or initial setup)
 Route::get('/seed-users', function () {
 	try {
 		Artisan::call('db:seed', ['--class' => 'OfficeUserSeeder', '--force' => true]);
