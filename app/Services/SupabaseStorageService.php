@@ -47,12 +47,13 @@ class SupabaseStorageService
                 'content_size' => strlen($content),
             ]);
             
-            // Try POST first (Supabase Storage prefers POST for uploads)
+            // Supabase Storage API requires raw binary data in the body
+            // Use withBody() to send raw binary instead of JSON/form-data
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->key,
                 'Content-Type' => 'image/jpeg',
                 'x-upsert' => 'true', // Overwrite if exists
-            ])->post($uploadUrl, $content);
+            ])->withBody($content, 'image/jpeg')->post($uploadUrl);
             
             // If POST fails with 405, try PUT
             if ($response->status() === 405) {
@@ -61,7 +62,7 @@ class SupabaseStorageService
                     'Authorization' => 'Bearer ' . $this->key,
                     'Content-Type' => 'image/jpeg',
                     'x-upsert' => 'true',
-                ])->put($uploadUrl, $content);
+                ])->withBody($content, 'image/jpeg')->put($uploadUrl);
             }
 
             if ($response->successful()) {
