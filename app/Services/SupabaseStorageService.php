@@ -28,40 +28,69 @@ class SupabaseStorageService
     public function upload(string $path, string $content): ?string
     {
         if (!$this->url || !$this->key) {
-            Log::error('Supabase credentials not configured');
+            Log::error('Supabase credentials not configured', [
+                'url_set' => !empty($this->url),
+                'key_set' => !empty($this->key),
+            ]);
             return null;
         }
 
         try {
+            $uploadUrl = "{$this->url}/storage/v1/object/{$this->bucket}/{$path}";
+            
+            Log::info('Attempting Supabase upload', [
+                'url' => $uploadUrl,
+                'bucket' => $this->bucket,
+                'path' => $path,
+                'content_size' => strlen($content),
+            ]);
+            
+            // Try POST first (Supabase Storage prefers POST for uploads)
             $response = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->key,
                 'Content-Type' => 'image/jpeg',
                 'x-upsert' => 'true', // Overwrite if exists
-            ])->put(
-                "{$this->url}/storage/v1/object/{$this->bucket}/{$path}",
-                $content
-            );
+            ])->post($uploadUrl, $content);
+            
+            // If POST fails with 405, try PUT
+            if ($response->status() === 405) {
+                Log::info('POST not allowed, trying PUT', ['url' => $uploadUrl]);
+                $response = Http::withHeaders([
+                    'Authorization' => 'Bearer ' . $this->key,
+                    'Content-Type' => 'image/jpeg',
+                    'x-upsert' => 'true',
+                ])->put($uploadUrl, $content);
+            }
 
             if ($response->successful()) {
                 // Generate public URL
                 $publicUrl = "{$this->url}/storage/v1/object/public/{$this->bucket}/{$path}";
-                Log::info('Image uploaded to Supabase', [
+                Log::info('Image uploaded to Supabase successfully', [
                     'path' => $path,
                     'url' => $publicUrl,
                 ]);
                 return $publicUrl;
             } else {
+                $errorBody = $response->body();
+                $errorJson = json_decode($errorBody, true);
+                
                 Log::error('Supabase upload failed', [
                     'path' => $path,
+                    'bucket' => $this->bucket,
                     'status' => $response->status(),
-                    'response' => $response->body(),
+                    'status_text' => $response->reason(),
+                    'response_body' => $errorBody,
+                    'error_message' => $errorJson['message'] ?? $errorJson['error'] ?? 'Unknown error',
+                    'upload_url' => $uploadUrl,
                 ]);
                 return null;
             }
         } catch (\Exception $e) {
             Log::error('Supabase upload exception', [
                 'path' => $path,
+                'bucket' => $this->bucket,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             return null;
         }
