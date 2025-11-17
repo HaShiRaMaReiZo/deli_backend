@@ -14,7 +14,8 @@ class SupabaseStorageService
     public function __construct()
     {
         $this->url = env('SUPABASE_URL');
-        $this->key = env('SUPABASE_KEY');
+        // Use service_role key if available (bypasses RLS), otherwise use anon key
+        $this->key = env('SUPABASE_SERVICE_ROLE_KEY') ?: env('SUPABASE_KEY');
         $this->bucket = env('SUPABASE_BUCKET', 'package-images');
     }
 
