@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Clear any cached config first (in case of errors)
+php artisan config:clear || true
+
 # Cache Laravel configuration
 php artisan config:cache || true
 php artisan route:cache || true
