@@ -38,6 +38,24 @@ class PackageController extends Controller
                 ob_end_clean();
             }
             
+            // Normalize empty strings to null for optional fields
+            // Also handle invalid email formats (if it doesn't contain @, treat as null)
+            $packages = $request->packages;
+            foreach ($packages as &$package) {
+                // Handle customer_email - if empty or doesn't look like an email, set to null
+                if (isset($package['customer_email'])) {
+                    $email = trim($package['customer_email']);
+                    if (empty($email) || strpos($email, '@') === false) {
+                        $package['customer_email'] = null;
+                    }
+                }
+                // Handle package_description - if empty, set to null
+                if (isset($package['package_description']) && empty(trim($package['package_description']))) {
+                    $package['package_description'] = null;
+                }
+            }
+            $request->merge(['packages' => $packages]);
+            
             $request->validate([
                 'packages' => 'required|array|min:1|max:50', // Limit to 50 packages per request
                 'packages.*.customer_name' => 'required|string|max:255',
@@ -205,9 +223,15 @@ class PackageController extends Controller
                 'image_upload_errors' => $imageUploadErrors, // Include image upload errors
             ], count($createdPackages) > 0 ? 201 : 422)->header('Content-Type', 'application/json');
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
+                'error_details' => 'Please check the validation errors and correct the input data.',
             ], 422)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
             Log::error('Bulk package creation error', [
