@@ -60,9 +60,27 @@ class PackageController extends Controller
                 $packageImageUrl = null;
                 if (!empty($packageData['package_image'])) {
                     try {
+                        $base64String = $packageData['package_image'];
+                        
+                        // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+                        if (strpos($base64String, ',') !== false) {
+                            $base64String = explode(',', $base64String, 2)[1];
+                        }
+                        
                         // Decode base64 image
-                        $imageData = base64_decode($packageData['package_image']);
-                        if ($imageData !== false && strlen($imageData) > 0) {
+                        $imageData = base64_decode($base64String, true); // strict mode
+                        
+                        if ($imageData === false) {
+                            Log::warning('Failed to decode base64 image', [
+                                'tracking_code' => $trackingCode,
+                                'base64_length' => strlen($packageData['package_image']),
+                                'base64_preview' => substr($packageData['package_image'], 0, 50) . '...'
+                            ]);
+                        } elseif (strlen($imageData) === 0) {
+                            Log::warning('Decoded image data is empty', [
+                                'tracking_code' => $trackingCode
+                            ]);
+                        } else {
                             // Generate unique filename
                             $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
                             $path = 'package_images/' . $filename;
@@ -81,13 +99,13 @@ class PackageController extends Controller
                             } else {
                                 Log::warning('Failed to upload package image to Supabase', [
                                     'tracking_code' => $trackingCode,
-                                    'path' => $path
+                                    'path' => $path,
+                                    'image_size' => strlen($imageData),
+                                    'supabase_url' => env('SUPABASE_URL'),
+                                    'supabase_key_set' => !empty(env('SUPABASE_KEY')),
+                                    'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images')
                                 ]);
                             }
-                        } else {
-                            Log::warning('Invalid base64 image data', [
-                                'tracking_code' => $trackingCode
-                            ]);
                         }
                     } catch (\Exception $e) {
                         // Log error but don't fail package creation
