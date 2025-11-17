@@ -32,172 +32,194 @@ class PackageController extends Controller
 
     public function bulkStore(Request $request)
     {
-        $request->validate([
-            'packages' => 'required|array|min:1|max:50', // Limit to 50 packages per request
-            'packages.*.customer_name' => 'required|string|max:255',
-            'packages.*.customer_phone' => 'required|string|max:20',
-            'packages.*.customer_email' => 'nullable|email',
-            'packages.*.delivery_address' => 'required|string',
-            'packages.*.delivery_latitude' => 'nullable|numeric',
-            'packages.*.delivery_longitude' => 'nullable|numeric',
-            'packages.*.payment_type' => 'required|in:cod,prepaid',
-            'packages.*.amount' => 'required|numeric|min:0',
-            'packages.*.package_description' => 'nullable|string',
-            'packages.*.package_image' => 'nullable|string', // Base64 encoded image
-        ]);
+        try {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            $request->validate([
+                'packages' => 'required|array|min:1|max:50', // Limit to 50 packages per request
+                'packages.*.customer_name' => 'required|string|max:255',
+                'packages.*.customer_phone' => 'required|string|max:20',
+                'packages.*.customer_email' => 'nullable|email',
+                'packages.*.delivery_address' => 'required|string',
+                'packages.*.delivery_latitude' => 'nullable|numeric',
+                'packages.*.delivery_longitude' => 'nullable|numeric',
+                'packages.*.payment_type' => 'required|in:cod,prepaid',
+                'packages.*.amount' => 'required|numeric|min:0',
+                'packages.*.package_description' => 'nullable|string',
+                'packages.*.package_image' => 'nullable|string', // Base64 encoded image
+            ]);
 
-        $merchant = $request->user()->merchant;
-        $packages = $request->packages;
-        $createdPackages = [];
-        $errors = [];
-        $imageUploadErrors = []; // Track image upload errors
+            $merchant = $request->user()->merchant;
+            $packages = $request->packages;
+            $createdPackages = [];
+            $errors = [];
+            $imageUploadErrors = []; // Track image upload errors
 
-        foreach ($packages as $index => $packageData) {
-            try {
-                // Generate unique tracking code
-                $trackingCode = TrackingCodeService::generate();
+            foreach ($packages as $index => $packageData) {
+                try {
+                    // Generate unique tracking code
+                    $trackingCode = TrackingCodeService::generate();
 
-                // Handle package image (base64 to Supabase)
-                $packageImageUrl = null;
-                $imageError = null;
-                if (!empty($packageData['package_image'])) {
-                    try {
-                        $base64String = $packageData['package_image'];
-                        
-                        // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
-                        if (strpos($base64String, ',') !== false) {
-                            $base64String = explode(',', $base64String, 2)[1];
-                        }
-                        
-                        // Decode base64 image
-                        $imageData = base64_decode($base64String, true); // strict mode
-                        
-                        if ($imageData === false) {
-                            $imageError = 'Failed to decode base64 image data';
-                            Log::warning('Failed to decode base64 image', [
-                                'tracking_code' => $trackingCode,
-                                'base64_length' => strlen($packageData['package_image']),
-                                'base64_preview' => substr($packageData['package_image'], 0, 50) . '...'
-                            ]);
-                        } elseif (strlen($imageData) === 0) {
-                            $imageError = 'Decoded image data is empty';
-                            Log::warning('Decoded image data is empty', [
-                                'tracking_code' => $trackingCode
-                            ]);
-                        } else {
-                            // Check if Supabase is configured
-                            $supabaseUrl = env('SUPABASE_URL');
-                            $supabaseKey = env('SUPABASE_KEY');
+                    // Handle package image (base64 to Supabase)
+                    $packageImageUrl = null;
+                    $imageError = null;
+                    if (!empty($packageData['package_image'])) {
+                        try {
+                            $base64String = $packageData['package_image'];
                             
-                            if (empty($supabaseUrl) || empty($supabaseKey)) {
-                                $imageError = 'Supabase not configured (missing SUPABASE_URL or SUPABASE_KEY)';
-                                Log::error('Supabase credentials missing', [
+                            // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+                            if (strpos($base64String, ',') !== false) {
+                                $base64String = explode(',', $base64String, 2)[1];
+                            }
+                            
+                            // Decode base64 image
+                            $imageData = base64_decode($base64String, true); // strict mode
+                            
+                            if ($imageData === false) {
+                                $imageError = 'Failed to decode base64 image data';
+                                Log::warning('Failed to decode base64 image', [
                                     'tracking_code' => $trackingCode,
-                                    'supabase_url_set' => !empty($supabaseUrl),
-                                    'supabase_key_set' => !empty($supabaseKey)
+                                    'base64_length' => strlen($packageData['package_image']),
+                                    'base64_preview' => substr($packageData['package_image'], 0, 50) . '...'
+                                ]);
+                            } elseif (strlen($imageData) === 0) {
+                                $imageError = 'Decoded image data is empty';
+                                Log::warning('Decoded image data is empty', [
+                                    'tracking_code' => $trackingCode
                                 ]);
                             } else {
-                                // Generate unique filename
-                                $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
-                                $path = 'package_images/' . $filename;
+                                // Check if Supabase is configured
+                                $supabaseUrl = env('SUPABASE_URL');
+                                $supabaseKey = env('SUPABASE_KEY');
                                 
-                                // Upload to Supabase Storage
-                                $supabase = new SupabaseStorageService();
-                                $supabaseErrorMessage = null;
-                                $packageImageUrl = $supabase->upload($path, $imageData, $supabaseErrorMessage);
-                                
-                                if ($packageImageUrl) {
-                                    Log::info('Package image uploaded to Supabase', [
+                                if (empty($supabaseUrl) || empty($supabaseKey)) {
+                                    $imageError = 'Supabase not configured (missing SUPABASE_URL or SUPABASE_KEY)';
+                                    Log::error('Supabase credentials missing', [
                                         'tracking_code' => $trackingCode,
-                                        'path' => $path,
-                                        'url' => $packageImageUrl,
-                                        'size' => strlen($imageData)
+                                        'supabase_url_set' => !empty($supabaseUrl),
+                                        'supabase_key_set' => !empty($supabaseKey)
                                     ]);
                                 } else {
-                                    // Sanitize error message to ensure valid UTF-8 for JSON encoding
-                                    $sanitizedError = $supabaseErrorMessage ?? 'Supabase upload failed (unknown error)';
-                                    $sanitizedError = mb_convert_encoding($sanitizedError, 'UTF-8', 'UTF-8');
-                                    $sanitizedError = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $sanitizedError);
-                                    $imageError = substr($sanitizedError, 0, 200);
+                                    // Generate unique filename
+                                    $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
+                                    $path = 'package_images/' . $filename;
                                     
-                                    Log::warning('Failed to upload package image to Supabase', [
-                                        'tracking_code' => $trackingCode,
-                                        'path' => $path,
-                                        'image_size' => strlen($imageData),
-                                        'supabase_url' => $supabaseUrl,
-                                        'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images'),
-                                        'error' => $imageError
-                                    ]);
+                                    // Upload to Supabase Storage
+                                    $supabase = new SupabaseStorageService();
+                                    $supabaseErrorMessage = null;
+                                    $packageImageUrl = $supabase->upload($path, $imageData, $supabaseErrorMessage);
+                                    
+                                    if ($packageImageUrl) {
+                                        Log::info('Package image uploaded to Supabase', [
+                                            'tracking_code' => $trackingCode,
+                                            'path' => $path,
+                                            'url' => $packageImageUrl,
+                                            'size' => strlen($imageData)
+                                        ]);
+                                    } else {
+                                        // Sanitize error message to ensure valid UTF-8 for JSON encoding
+                                        $sanitizedError = $supabaseErrorMessage ?? 'Supabase upload failed (unknown error)';
+                                        $sanitizedError = mb_convert_encoding($sanitizedError, 'UTF-8', 'UTF-8');
+                                        $sanitizedError = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $sanitizedError);
+                                        $imageError = substr($sanitizedError, 0, 200);
+                                        
+                                        Log::warning('Failed to upload package image to Supabase', [
+                                            'tracking_code' => $trackingCode,
+                                            'path' => $path,
+                                            'image_size' => strlen($imageData),
+                                            'supabase_url' => $supabaseUrl,
+                                            'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images'),
+                                            'error' => $imageError
+                                        ]);
+                                    }
                                 }
                             }
+                        } catch (\Exception $e) {
+                            // Sanitize exception message to ensure valid UTF-8 for JSON encoding
+                            $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+                            $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
+                            $imageError = 'Exception: ' . substr($exceptionMsg, 0, 200);
+                            
+                            Log::error('Failed to upload package image', [
+                                'tracking_code' => $trackingCode,
+                                'error' => $imageError,
+                            ]);
                         }
-                    } catch (\Exception $e) {
-                        // Sanitize exception message to ensure valid UTF-8 for JSON encoding
-                        $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
-                        $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
-                        $imageError = 'Exception: ' . substr($exceptionMsg, 0, 200);
                         
-                        Log::error('Failed to upload package image', [
-                            'tracking_code' => $trackingCode,
-                            'error' => $imageError,
-                        ]);
+                        // Store image error for this package
+                        if ($imageError) {
+                            $imageUploadErrors[] = [
+                                'tracking_code' => $trackingCode,
+                                'error' => $imageError
+                            ];
+                        }
                     }
-                    
-                    // Store image error for this package
-                    if ($imageError) {
-                        $imageUploadErrors[] = [
-                            'tracking_code' => $trackingCode,
-                            'error' => $imageError
-                        ];
-                    }
+
+                    $package = Package::create([
+                        'tracking_code' => $trackingCode,
+                        'merchant_id' => $merchant->id,
+                        'customer_name' => $packageData['customer_name'],
+                        'customer_phone' => $packageData['customer_phone'],
+                        'customer_email' => $packageData['customer_email'] ?? null,
+                        'delivery_address' => $packageData['delivery_address'],
+                        'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
+                        'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
+                        'payment_type' => $packageData['payment_type'],
+                        'amount' => $packageData['amount'],
+                        'package_image' => $packageImageUrl,
+                        'package_description' => $packageData['package_description'] ?? null,
+                        'status' => 'registered',
+                    ]);
+
+                    // Log status history
+                    PackageStatusHistory::create([
+                        'package_id' => $package->id,
+                        'status' => 'registered',
+                        'changed_by_user_id' => $request->user()->id,
+                        'changed_by_type' => 'merchant',
+                        'created_at' => now(),
+                    ]);
+
+                    // Broadcast status change via WebSocket
+                    event(new PackageStatusChanged($package->id, 'registered', $package->merchant_id));
+
+                    $createdPackages[] = $package;
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'index' => $index,
+                        'customer_name' => $packageData['customer_name'] ?? 'Unknown',
+                        'error' => $e->getMessage(),
+                    ];
                 }
-
-                $package = Package::create([
-                    'tracking_code' => $trackingCode,
-                    'merchant_id' => $merchant->id,
-                    'customer_name' => $packageData['customer_name'],
-                    'customer_phone' => $packageData['customer_phone'],
-                    'customer_email' => $packageData['customer_email'] ?? null,
-                    'delivery_address' => $packageData['delivery_address'],
-                    'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
-                    'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
-                    'payment_type' => $packageData['payment_type'],
-                    'amount' => $packageData['amount'],
-                    'package_image' => $packageImageUrl,
-                    'package_description' => $packageData['package_description'] ?? null,
-                    'status' => 'registered',
-                ]);
-
-                // Log status history
-                PackageStatusHistory::create([
-                    'package_id' => $package->id,
-                    'status' => 'registered',
-                    'changed_by_user_id' => $request->user()->id,
-                    'changed_by_type' => 'merchant',
-                    'created_at' => now(),
-                ]);
-
-                // Broadcast status change via WebSocket
-                event(new PackageStatusChanged($package->id, 'registered', $package->merchant_id));
-
-                $createdPackages[] = $package;
-            } catch (\Exception $e) {
-                $errors[] = [
-                    'index' => $index,
-                    'customer_name' => $packageData['customer_name'] ?? 'Unknown',
-                    'error' => $e->getMessage(),
-                ];
             }
-        }
 
-        return response()->json([
-            'message' => count($createdPackages) . ' package(s) created successfully',
-            'created_count' => count($createdPackages),
-            'failed_count' => count($errors),
-            'packages' => $createdPackages,
-            'errors' => $errors,
-            'image_upload_errors' => $imageUploadErrors, // Include image upload errors
-        ], count($createdPackages) > 0 ? 201 : 422);
+            return response()->json([
+                'message' => count($createdPackages) . ' package(s) created successfully',
+                'created_count' => count($createdPackages),
+                'failed_count' => count($errors),
+                'packages' => $createdPackages,
+                'errors' => $errors,
+                'image_upload_errors' => $imageUploadErrors, // Include image upload errors
+            ], count($createdPackages) > 0 ? 201 : 422)->header('Content-Type', 'application/json');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422)->header('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            Log::error('Bulk package creation error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred while creating packages',
+                'error' => $e->getMessage(),
+            ], 500)->header('Content-Type', 'application/json');
+        }
     }
 
     public function show(Request $request, $id)
