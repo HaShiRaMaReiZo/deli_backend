@@ -23,11 +23,13 @@ class SupabaseStorageService
      *
      * @param string $path File path (e.g., 'package_images/filename.jpg')
      * @param string $content Image content (binary data)
+     * @param string|null $errorMessage Reference to store error message
      * @return string|null Public URL or null on failure
      */
-    public function upload(string $path, string $content): ?string
+    public function upload(string $path, string $content, ?string &$errorMessage = null): ?string
     {
         if (!$this->url || !$this->key) {
+            $errorMessage = 'Supabase credentials not configured (missing SUPABASE_URL or SUPABASE_KEY)';
             Log::error('Supabase credentials not configured', [
                 'url_set' => !empty($this->url),
                 'key_set' => !empty($this->key),
@@ -73,6 +75,9 @@ class SupabaseStorageService
             } else {
                 $errorBody = $response->body();
                 $errorJson = json_decode($errorBody, true);
+                $supabaseError = $errorJson['message'] ?? $errorJson['error'] ?? $errorBody;
+                
+                $errorMessage = "HTTP {$response->status()}: {$supabaseError}";
                 
                 Log::error('Supabase upload failed', [
                     'path' => $path,
@@ -80,12 +85,13 @@ class SupabaseStorageService
                     'status' => $response->status(),
                     'status_text' => $response->reason(),
                     'response_body' => $errorBody,
-                    'error_message' => $errorJson['message'] ?? $errorJson['error'] ?? 'Unknown error',
+                    'error_message' => $supabaseError,
                     'upload_url' => $uploadUrl,
                 ]);
                 return null;
             }
         } catch (\Exception $e) {
+            $errorMessage = 'Exception: ' . $e->getMessage();
             Log::error('Supabase upload exception', [
                 'path' => $path,
                 'bucket' => $this->bucket,

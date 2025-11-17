@@ -103,7 +103,8 @@ class PackageController extends Controller
                                 
                                 // Upload to Supabase Storage
                                 $supabase = new SupabaseStorageService();
-                                $packageImageUrl = $supabase->upload($path, $imageData);
+                                $supabaseErrorMessage = null;
+                                $packageImageUrl = $supabase->upload($path, $imageData, $supabaseErrorMessage);
                                 
                                 if ($packageImageUrl) {
                                     Log::info('Package image uploaded to Supabase', [
@@ -113,13 +114,14 @@ class PackageController extends Controller
                                         'size' => strlen($imageData)
                                     ]);
                                 } else {
-                                    $imageError = 'Supabase upload failed (check logs for details)';
+                                    $imageError = $supabaseErrorMessage ?? 'Supabase upload failed (unknown error)';
                                     Log::warning('Failed to upload package image to Supabase', [
                                         'tracking_code' => $trackingCode,
                                         'path' => $path,
                                         'image_size' => strlen($imageData),
                                         'supabase_url' => $supabaseUrl,
-                                        'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images')
+                                        'supabase_bucket' => env('SUPABASE_BUCKET', 'package-images'),
+                                        'error' => $supabaseErrorMessage
                                     ]);
                                 }
                             }
