@@ -232,6 +232,11 @@ SESSION_SAME_SITE=lax
 CACHE_DRIVER=database
 QUEUE_CONNECTION=database
 
+# Supabase Storage (for package images)
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_KEY=your-anon-public-key-here
+SUPABASE_BUCKET=package-images
+
 # Mail (configure if needed)
 MAIL_MAILER=smtp
 MAIL_HOST=smtp.mailtrap.io

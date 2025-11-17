@@ -13,6 +13,12 @@ return Application::configure(basePath: dirname(__DIR__))
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
+    ->withSchedule(function ($schedule) {
+        // Clean up images older than 90 days daily at 2 AM
+        $schedule->command('images:cleanup --days=90')
+            ->dailyAt('02:00')
+            ->timezone('UTC');
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'role' => \App\Http\Middleware\CheckRole::class,

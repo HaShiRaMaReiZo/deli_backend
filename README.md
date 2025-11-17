@@ -18,7 +18,7 @@ Laravel backend API for the Deli delivery management system. Handles package man
 - **Framework**: Laravel 11
 - **Database**: MySQL
 - **Real-time**: WebSocket (Pusher/Broadcasting)
-- **Storage**: Local filesystem (configurable for S3)
+- **Storage**: Supabase Storage (for package images with auto-cleanup)
 - **Deployment**: Docker on Render
 
 ## Project Structure

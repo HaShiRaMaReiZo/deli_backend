@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Package;
 use App\Models\PackageStatusHistory;
 use App\Services\TrackingCodeService;
+use App\Services\SupabaseStorageService;
 use App\Events\PackageStatusChanged;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 class PackageController extends Controller
@@ -56,40 +56,30 @@ class PackageController extends Controller
                 // Generate unique tracking code
                 $trackingCode = TrackingCodeService::generate();
 
-                // Handle package image (base64 to file)
+                // Handle package image (base64 to Supabase)
                 $packageImageUrl = null;
                 if (!empty($packageData['package_image'])) {
                     try {
                         // Decode base64 image
                         $imageData = base64_decode($packageData['package_image']);
                         if ($imageData !== false && strlen($imageData) > 0) {
-                            // Ensure package_images directory exists
-                            $directory = 'package_images';
-                            if (!Storage::disk('public')->exists($directory)) {
-                                Storage::disk('public')->makeDirectory($directory);
-                            }
-                            
                             // Generate unique filename
                             $filename = 'package_' . $trackingCode . '_' . time() . '_' . uniqid() . '.jpg';
-                            $path = $directory . '/' . $filename;
+                            $path = 'package_images/' . $filename;
                             
-                            // Save to storage
-                            $saved = Storage::disk('public')->put($path, $imageData);
+                            // Upload to Supabase Storage
+                            $supabase = new SupabaseStorageService();
+                            $packageImageUrl = $supabase->upload($path, $imageData);
                             
-                            if ($saved) {
-                                // Generate full URL - use APP_URL from config
-                                $baseUrl = config('app.url', env('APP_URL', 'http://localhost'));
-                                $packageImageUrl = rtrim($baseUrl, '/') . '/storage/' . $path;
-                                
-                                // Log success for debugging
-                                Log::info('Package image saved successfully', [
+                            if ($packageImageUrl) {
+                                Log::info('Package image uploaded to Supabase', [
                                     'tracking_code' => $trackingCode,
                                     'path' => $path,
                                     'url' => $packageImageUrl,
                                     'size' => strlen($imageData)
                                 ]);
                             } else {
-                                Log::warning('Failed to save package image - put() returned false', [
+                                Log::warning('Failed to upload package image to Supabase', [
                                     'tracking_code' => $trackingCode,
                                     'path' => $path
                                 ]);
@@ -101,7 +91,7 @@ class PackageController extends Controller
                         }
                     } catch (\Exception $e) {
                         // Log error but don't fail package creation
-                        Log::error('Failed to save package image', [
+                        Log::error('Failed to upload package image', [
                             'tracking_code' => $trackingCode,
                             'error' => $e->getMessage(),
                             'trace' => $e->getTraceAsString()
