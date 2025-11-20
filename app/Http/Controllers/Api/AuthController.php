@@ -91,7 +91,8 @@ class AuthController extends Controller
             ]);
         }
 
-        if ($user->status !== 'active') {
+        // Only check user status for riders (merchants are managed via merchant.status)
+        if ($user->role === 'rider' && $user->status !== 'active') {
             return response()->json([
                 'message' => 'Account is not active',
             ], 403);

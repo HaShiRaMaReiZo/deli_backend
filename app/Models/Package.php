@@ -22,6 +22,7 @@ class Package extends Model
         'package_image',
         'package_description',
         'status',
+        'is_draft',
         'current_rider_id',
         'assigned_at',
         'picked_up_at',

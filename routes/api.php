@@ -33,6 +33,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/packages/{id}/track', [MerchantPackageController::class, 'track']);
         Route::get('/packages/{id}/live-location', [MerchantPackageController::class, 'liveLocation']);
         Route::get('/packages/{id}/history', [MerchantPackageController::class, 'history']);
+        
+        // Draft routes
+        Route::post('/packages/draft', [MerchantPackageController::class, 'saveDraft']);
+        Route::get('/packages/draft', [MerchantPackageController::class, 'getDrafts']);
+        Route::post('/packages/draft/submit', [MerchantPackageController::class, 'submitDrafts']);
+
     });
 
     // Rider routes

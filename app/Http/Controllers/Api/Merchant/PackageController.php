@@ -19,7 +19,9 @@ class PackageController extends Controller
         
         // Only load necessary relationships - statusHistory is heavy and not needed for list view
         // Only load specific columns to reduce data transfer
+        // Exclude draft packages from regular list
         $packages = Package::where('merchant_id', $merchant->id)
+            ->where('is_draft', false)
             ->with(['currentRider:id,name,phone', 'statusHistory' => function ($query) {
                 // Only get the latest status history entry for each package
                 $query->orderBy('created_at', 'desc')->limit(1);
@@ -384,5 +386,240 @@ class PackageController extends Controller
             ->get();
 
         return response()->json($history);
+    }
+
+    /**
+     * Save packages as drafts (without tracking codes or status)
+     */
+    public function saveDraft(Request $request)
+    {
+        try {
+            // Normalize empty strings to null for optional fields
+            $packages = $request->packages;
+            foreach ($packages as &$package) {
+                if (isset($package['customer_email'])) {
+                    $email = trim($package['customer_email']);
+                    if (empty($email) || strpos($email, '@') === false) {
+                        $package['customer_email'] = null;
+                    }
+                }
+                if (isset($package['package_description']) && empty(trim($package['package_description']))) {
+                    $package['package_description'] = null;
+                }
+            }
+            $request->merge(['packages' => $packages]);
+
+            $request->validate([
+                'packages' => 'required|array|min:1|max:50',
+                'packages.*.customer_name' => 'required|string|max:255',
+                'packages.*.customer_phone' => 'required|string|max:20',
+                'packages.*.customer_email' => 'nullable|email',
+                'packages.*.delivery_address' => 'required|string',
+                'packages.*.delivery_latitude' => 'nullable|numeric',
+                'packages.*.delivery_longitude' => 'nullable|numeric',
+                'packages.*.payment_type' => 'required|in:cod,prepaid',
+                'packages.*.amount' => 'required|numeric|min:0',
+                'packages.*.package_description' => 'nullable|string',
+                'packages.*.package_image' => 'nullable|string', // Base64 encoded image
+            ]);
+
+            $merchant = $request->user()->merchant;
+            $packages = $request->packages;
+            $createdDrafts = [];
+            $errors = [];
+            $imageUploadErrors = [];
+
+            foreach ($packages as $index => $packageData) {
+                try {
+                    // Handle package image (base64 to Supabase)
+                    $packageImageUrl = null;
+                    $imageError = null;
+                    if (!empty($packageData['package_image'])) {
+                        try {
+                            $base64String = $packageData['package_image'];
+                            
+                            if (strpos($base64String, ',') !== false) {
+                                $base64String = explode(',', $base64String, 2)[1];
+                            }
+                            
+                            $imageData = base64_decode($base64String, true);
+                            
+                            if ($imageData === false) {
+                                $imageError = 'Failed to decode base64 image data';
+                            } else {
+                                $supabaseService = new SupabaseStorageService();
+                                $packageImageUrl = $supabaseService->uploadPackageImage($imageData);
+                            }
+                        } catch (\Exception $e) {
+                            $imageError = 'Failed to upload image: ' . $e->getMessage();
+                            Log::warning('Draft image upload error', [
+                                'index' => $index,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+
+                    // Create draft package (no tracking code, no status, is_draft = true)
+                    $package = Package::create([
+                        'merchant_id' => $merchant->id,
+                        'customer_name' => $packageData['customer_name'],
+                        'customer_phone' => $packageData['customer_phone'],
+                        'customer_email' => $packageData['customer_email'] ?? null,
+                        'delivery_address' => $packageData['delivery_address'],
+                        'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
+                        'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
+                        'payment_type' => $packageData['payment_type'],
+                        'amount' => $packageData['amount'],
+                        'package_image' => $packageImageUrl,
+                        'package_description' => $packageData['package_description'] ?? null,
+                        'is_draft' => true,
+                        // No tracking_code, no status - these will be set when submitting
+                    ]);
+
+                    if ($imageError) {
+                        $imageUploadErrors[] = [
+                            'index' => $index,
+                            'customer_name' => $packageData['customer_name'],
+                            'error' => $imageError,
+                        ];
+                    }
+
+                    $createdDrafts[] = $package;
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'index' => $index,
+                        'customer_name' => $packageData['customer_name'] ?? 'Unknown',
+                        'error' => $e->getMessage(),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'message' => count($createdDrafts) . ' draft package(s) saved successfully',
+                'created_count' => count($createdDrafts),
+                'failed_count' => count($errors),
+                'packages' => $createdDrafts,
+                'errors' => $errors,
+                'image_upload_errors' => $imageUploadErrors,
+            ], count($createdDrafts) > 0 ? 201 : 422);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Draft package save error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred while saving drafts',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get all draft packages for the merchant
+     */
+    public function getDrafts(Request $request)
+    {
+        $merchant = $request->user()->merchant;
+        
+        $drafts = Package::where('merchant_id', $merchant->id)
+            ->where('is_draft', true)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json($drafts);
+    }
+
+    /**
+     * Submit draft packages to the system (convert to regular packages)
+     */
+    public function submitDrafts(Request $request)
+    {
+        try {
+            $request->validate([
+                'package_ids' => 'required|array|min:1',
+                'package_ids.*' => 'required|integer|exists:packages,id',
+            ]);
+
+            $merchant = $request->user()->merchant;
+            $packageIds = $request->package_ids;
+            
+            // Get draft packages that belong to this merchant
+            $draftPackages = Package::where('merchant_id', $merchant->id)
+                ->where('is_draft', true)
+                ->whereIn('id', $packageIds)
+                ->get();
+
+            if ($draftPackages->isEmpty()) {
+                return response()->json([
+                    'message' => 'No valid draft packages found',
+                ], 404);
+            }
+
+            $submittedPackages = [];
+            $errors = [];
+
+            foreach ($draftPackages as $package) {
+                try {
+                    // Generate tracking code
+                    $trackingCode = TrackingCodeService::generate();
+
+                    // Update package: set tracking code, status, and is_draft = false
+                    $package->update([
+                        'tracking_code' => $trackingCode,
+                        'status' => 'registered',
+                        'is_draft' => false,
+                    ]);
+
+                    // Create initial status history entry
+                    PackageStatusHistory::create([
+                        'package_id' => $package->id,
+                        'status' => 'registered',
+                        'changed_by_id' => $merchant->user_id,
+                        'changed_by_type' => 'merchant',
+                        'created_at' => now(),
+                    ]);
+
+                    // Broadcast status change via WebSocket
+                    event(new PackageStatusChanged($package->id, 'registered', $package->merchant_id));
+
+                    $submittedPackages[] = $package;
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'package_id' => $package->id,
+                        'customer_name' => $package->customer_name,
+                        'error' => $e->getMessage(),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'message' => count($submittedPackages) . ' package(s) submitted successfully',
+                'submitted_count' => count($submittedPackages),
+                'failed_count' => count($errors),
+                'packages' => $submittedPackages,
+                'errors' => $errors,
+            ], count($submittedPackages) > 0 ? 200 : 422);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Draft submission error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred while submitting drafts',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }
