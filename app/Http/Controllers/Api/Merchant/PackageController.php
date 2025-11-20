@@ -501,13 +501,23 @@ class PackageController extends Controller
                 'packages' => $createdDrafts,
                 'errors' => $errors,
                 'image_upload_errors' => $imageUploadErrors,
-            ], count($createdDrafts) > 0 ? 201 : 422);
+            ], count($createdDrafts) > 0 ? 201 : 422)->header('Content-Type', 'application/json');
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
-            ], 422);
+            ], 422)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
             Log::error('Draft package save error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -516,7 +526,7 @@ class PackageController extends Controller
             return response()->json([
                 'message' => 'An error occurred while saving drafts',
                 'error' => $e->getMessage(),
-            ], 500);
+            ], 500)->header('Content-Type', 'application/json');
         }
     }
 
@@ -558,7 +568,7 @@ class PackageController extends Controller
             if ($draftPackages->isEmpty()) {
                 return response()->json([
                     'message' => 'No valid draft packages found',
-                ], 404);
+                ], 404)->header('Content-Type', 'application/json');
             }
 
             $submittedPackages = [];
@@ -604,13 +614,23 @@ class PackageController extends Controller
                 'failed_count' => count($errors),
                 'packages' => $submittedPackages,
                 'errors' => $errors,
-            ], count($submittedPackages) > 0 ? 200 : 422);
+            ], count($submittedPackages) > 0 ? 200 : 422)->header('Content-Type', 'application/json');
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
-            ], 422);
+            ], 422)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
             Log::error('Draft submission error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -619,7 +639,7 @@ class PackageController extends Controller
             return response()->json([
                 'message' => 'An error occurred while submitting drafts',
                 'error' => $e->getMessage(),
-            ], 500);
+            ], 500)->header('Content-Type', 'application/json');
         }
     }
 }
