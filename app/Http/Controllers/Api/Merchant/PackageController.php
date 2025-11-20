@@ -10,6 +10,7 @@ use App\Services\SupabaseStorageService;
 use App\Events\PackageStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Database\QueryException;
 
 class PackageController extends Controller
 {
@@ -512,6 +513,31 @@ class PackageController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
             ], 422)->header('Content-Type', 'application/json');
+        } catch (QueryException $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            Log::error('Draft package save database error', [
+                'error' => $e->getMessage(),
+                'sql' => $e->getSql(),
+                'bindings' => $e->getBindings(),
+            ]);
+            
+            // Check if it's a constraint violation (likely tracking_code NOT NULL)
+            if (strpos($e->getMessage(), 'tracking_code') !== false || 
+                strpos($e->getMessage(), 'null value') !== false) {
+                return response()->json([
+                    'message' => 'Database error: Please run migrations. The tracking_code column needs to be nullable for drafts.',
+                    'error' => 'Database constraint violation. Migrations may not have been run.',
+                ], 500)->header('Content-Type', 'application/json');
+            }
+            
+            return response()->json([
+                'message' => 'Database error occurred while saving drafts',
+                'error' => $e->getMessage(),
+            ], 500)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
             // Ensure output buffer is clean
             if (ob_get_level()) {
