@@ -828,14 +828,76 @@ class PackageController extends Controller
      */
     public function getDrafts(Request $request)
     {
-        $merchant = $request->user()->merchant;
-        
-        $drafts = Package::where('merchant_id', $merchant->id)
-            ->where('is_draft', true)
-            ->orderBy('created_at', 'desc')
-            ->get();
+        try {
+            // Clear any existing output buffers
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            $merchant = $request->user()->merchant;
+            
+            $drafts = Package::where('merchant_id', $merchant->id)
+                ->where('is_draft', true)
+                ->orderBy('created_at', 'desc')
+                ->get();
 
-        return response()->json($drafts);
+            // Manually serialize packages to handle null status
+            $draftsArray = [];
+            foreach ($drafts as $pkg) {
+                try {
+                    $packageArray = $pkg->toArray();
+                    $draftsArray[] = [
+                        'id' => (int) $packageArray['id'],
+                        'merchant_id' => (int) $packageArray['merchant_id'],
+                        'customer_name' => (string) $packageArray['customer_name'],
+                        'customer_phone' => (string) $packageArray['customer_phone'],
+                        'customer_email' => $packageArray['customer_email'] ?? null,
+                        'delivery_address' => (string) $packageArray['delivery_address'],
+                        'delivery_latitude' => isset($packageArray['delivery_latitude']) ? (float) $packageArray['delivery_latitude'] : null,
+                        'delivery_longitude' => isset($packageArray['delivery_longitude']) ? (float) $packageArray['delivery_longitude'] : null,
+                        'payment_type' => (string) $packageArray['payment_type'],
+                        'amount' => (float) $packageArray['amount'],
+                        'package_image' => $packageArray['package_image'] ?? null,
+                        'package_description' => $packageArray['package_description'] ?? null,
+                        'tracking_code' => $packageArray['tracking_code'] ?? null,
+                        'status' => $packageArray['status'] ?? null, // Nullable for drafts
+                        'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
+                        'created_at' => $packageArray['created_at'] ?? now()->toDateTimeString(),
+                        'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
+                    ];
+                } catch (\Exception $e) {
+                    Log::warning('Error serializing draft package', [
+                        'package_id' => $pkg->id ?? 'unknown',
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Skip this package but continue with others
+                }
+            }
+
+            return response()->json($draftsArray, 200, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
+        } catch (\Throwable $e) {
+            // Ensure output buffer is clean
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            Log::error('Error getting drafts', [
+                'error' => $e->getMessage(),
+                'type' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred while fetching drafts',
+                'error' => $e->getMessage(),
+            ], 500, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
+        }
     }
 
     /**
