@@ -400,6 +400,14 @@ class PackageController extends Controller
         // Ensure we return JSON for API routes
         $request->headers->set('Accept', 'application/json');
         
+        // Clear any existing output buffers to prevent HTML from being sent
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        
+        // Start output buffering to catch any accidental output
+        ob_start();
+        
         try {
             // Normalize empty strings to null for optional fields
             $packages = $request->packages;
@@ -519,6 +527,9 @@ class PackageController extends Controller
                 }
             }
 
+            // Clean output buffer before sending response
+            ob_end_clean();
+            
             return response()->json([
                 'message' => count($createdDrafts) . ' draft package(s) saved successfully',
                 'created_count' => count($createdDrafts),
@@ -526,7 +537,10 @@ class PackageController extends Controller
                 'packages' => $createdDrafts,
                 'errors' => $errors,
                 'image_upload_errors' => $imageUploadErrors,
-            ], count($createdDrafts) > 0 ? 201 : 422)->header('Content-Type', 'application/json');
+            ], count($createdDrafts) > 0 ? 201 : 422, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             // Ensure output buffer is clean
             if (ob_get_level()) {
@@ -539,7 +553,7 @@ class PackageController extends Controller
             ], 422)->header('Content-Type', 'application/json');
         } catch (QueryException $e) {
             // Ensure output buffer is clean
-            if (ob_get_level()) {
+            while (ob_get_level()) {
                 ob_end_clean();
             }
             
@@ -560,16 +574,22 @@ class PackageController extends Controller
                     'message' => 'Database error: Please run migrations. The tracking_code column needs to be nullable for drafts.',
                     'error' => 'Database constraint violation. Migrations may not have been run.',
                     'details' => 'Error: ' . $errorMessage,
-                ], 500, ['Content-Type' => 'application/json']);
+                ], 500, [
+                    'Content-Type' => 'application/json',
+                    'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                ]);
             }
             
             return response()->json([
                 'message' => 'Database error occurred while saving drafts',
                 'error' => $errorMessage,
-            ], 500, ['Content-Type' => 'application/json']);
+            ], 500, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
         } catch (PDOException $e) {
             // Ensure output buffer is clean
-            if (ob_get_level()) {
+            while (ob_get_level()) {
                 ob_end_clean();
             }
             
@@ -586,16 +606,22 @@ class PackageController extends Controller
                     'message' => 'Database error: Please run migrations. The tracking_code column needs to be nullable for drafts.',
                     'error' => 'Database constraint violation. Migrations may not have been run.',
                     'details' => 'Error: ' . $errorMessage,
-                ], 500, ['Content-Type' => 'application/json']);
+                ], 500, [
+                    'Content-Type' => 'application/json',
+                    'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                ]);
             }
             
             return response()->json([
                 'message' => 'Database error occurred while saving drafts',
                 'error' => $errorMessage,
-            ], 500, ['Content-Type' => 'application/json']);
+            ], 500, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
         } catch (\Exception $e) {
             // Ensure output buffer is clean
-            if (ob_get_level()) {
+            while (ob_get_level()) {
                 ob_end_clean();
             }
             
@@ -607,7 +633,10 @@ class PackageController extends Controller
             return response()->json([
                 'message' => 'An error occurred while saving drafts',
                 'error' => $e->getMessage(),
-            ], 500)->header('Content-Type', 'application/json');
+            ], 500, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
         }
     }
 

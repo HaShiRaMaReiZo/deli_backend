@@ -18,6 +18,63 @@ Route::get('/', function () {
 	return redirect()->route('office.login');
 });
 
+// Route to check database schema (diagnostic)
+Route::get('/check-schema', function () {
+	try {
+		$hasIsDraft = \Illuminate\Support\Facades\Schema::hasColumn('packages', 'is_draft');
+		
+		// Check if tracking_code is nullable
+		$trackingCodeNullable = false;
+		try {
+			$columns = \Illuminate\Support\Facades\DB::select("
+				SELECT is_nullable 
+				FROM information_schema.columns 
+				WHERE table_name = 'packages' 
+				AND column_name = 'tracking_code'
+			");
+			if (!empty($columns)) {
+				$trackingCodeNullable = strtolower($columns[0]->is_nullable) === 'yes';
+			}
+		} catch (\Exception $e) {
+			// Try MySQL syntax
+			try {
+				$columns = \Illuminate\Support\Facades\DB::select("
+					SELECT IS_NULLABLE 
+					FROM information_schema.COLUMNS 
+					WHERE TABLE_NAME = 'packages' 
+					AND COLUMN_NAME = 'tracking_code'
+				");
+				if (!empty($columns)) {
+					$trackingCodeNullable = strtolower($columns[0]->IS_NULLABLE) === 'yes';
+				}
+			} catch (\Exception $e2) {
+				// Ignore
+			}
+		}
+		
+		// Check migrations table
+		$migrations = \Illuminate\Support\Facades\DB::table('migrations')
+			->where('migration', 'like', '%is_draft%')
+			->orWhere('migration', 'like', '%tracking_code%')
+			->get();
+		
+		return response()->json([
+			'has_is_draft_column' => $hasIsDraft,
+			'tracking_code_nullable' => $trackingCodeNullable,
+			'migrations_run' => $migrations->pluck('migration')->toArray(),
+			'status' => ($hasIsDraft && $trackingCodeNullable) ? 'ready' : 'migrations_needed',
+			'message' => ($hasIsDraft && $trackingCodeNullable) 
+				? 'Database schema is correct' 
+				: 'Migrations need to be run. The is_draft column or nullable tracking_code is missing.',
+		]);
+	} catch (\Exception $e) {
+		return response()->json([
+			'error' => $e->getMessage(),
+			'trace' => $e->getTraceAsString(),
+		], 500);
+	}
+});
+
 // Route to seed users (useful for resetting database or initial setup)
 Route::get('/seed-users', function () {
 	try {
