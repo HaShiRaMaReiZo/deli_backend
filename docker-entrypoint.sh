@@ -37,8 +37,10 @@ fi
 
 # Run database migrations (safe on startup in Render free plan)
 echo "Running database migrations..."
-php artisan migrate --force || {
-    echo "WARNING: Migrations failed. This might be normal if already migrated."
+php artisan migrate --force --verbose || {
+    echo "ERROR: Migrations failed. Checking migration status..."
+    php artisan migrate:status || true
+    echo "Attempting to continue anyway..."
 }
 
 # Seed database with initial users (super admin, etc.)

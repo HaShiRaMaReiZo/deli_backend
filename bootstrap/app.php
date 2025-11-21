@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Facades\Log;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -57,7 +58,21 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => 'Unauthenticated.',
                     'error' => 'Authentication required'
-                ], 401);
+                ], 401)->header('Content-Type', 'application/json');
+            }
+            
+            // Handle ALL exceptions for API routes to return JSON
+            if ($request->is('api/*')) {
+                Log::error('API Exception', [
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                
+                return response()->json([
+                    'message' => 'An error occurred',
+                    'error' => $e->getMessage(),
+                    'type' => get_class($e),
+                ], 500)->header('Content-Type', 'application/json');
             }
         });
         
