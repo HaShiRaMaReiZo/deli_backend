@@ -53,6 +53,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // Handle unauthenticated API requests with JSON response instead of redirect
         // This works even when API is accessed from a web browser
         $exceptions->respond(function ($request, Throwable $e) {
+            // Ensure $request is actually a Request object
+            if (!($request instanceof \Illuminate\Http\Request)) {
+                return null; // Let Laravel handle it
+            }
+            
             // Check if it's an API route (even if accessed from browser)
             if ($e instanceof AuthenticationException && $request->is('api/*')) {
                 return response()->json([
@@ -74,10 +79,15 @@ return Application::configure(basePath: dirname(__DIR__))
                     'type' => get_class($e),
                 ], 500)->header('Content-Type', 'application/json');
             }
+            
+            return null; // Let Laravel handle non-API routes
         });
         
         // Also handle other exceptions for API routes to return JSON
         $exceptions->shouldRenderJsonWhen(function ($request, Throwable $e) {
+            if (!($request instanceof \Illuminate\Http\Request)) {
+                return false;
+            }
             return $request->is('api/*') || $request->expectsJson();
         });
     })->create();
