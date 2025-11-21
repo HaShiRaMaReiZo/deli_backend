@@ -916,4 +916,155 @@ class PackageController extends Controller
             ]);
         }
     }
+
+    /**
+     * Update a draft package
+     */
+    public function updateDraft(Request $request, $id)
+    {
+        try {
+            $merchant = $request->user()->merchant;
+            
+            $package = Package::where('merchant_id', $merchant->id)
+                ->where('is_draft', true)
+                ->findOrFail($id);
+            
+            $validated = $request->validate([
+                'customer_name' => 'required|string|max:255',
+                'customer_phone' => 'required|string|max:20',
+                'customer_email' => 'nullable|email|max:255',
+                'delivery_address' => 'required|string|max:500',
+                'payment_type' => 'required|in:cod,prepaid',
+                'amount' => 'required|numeric|min:0',
+                'package_image' => 'nullable|string',
+                'package_description' => 'nullable|string|max:1000',
+            ]);
+            
+            // Handle image upload/update/delete
+            if (isset($validated['package_image'])) {
+                if (empty($validated['package_image'])) {
+                    // Empty string means delete image
+                    if ($package->package_image) {
+                        try {
+                            $supabaseService = new SupabaseStorageService();
+                            $oldPath = $supabaseService->extractPathFromUrl($package->package_image);
+                            if ($oldPath) {
+                                $supabaseService->delete($oldPath);
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning('Failed to delete old draft package image', [
+                                'package_id' => $package->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                    $validated['package_image'] = null;
+                } else {
+                    // New image provided - upload it
+                    try {
+                        $supabaseService = new SupabaseStorageService();
+                        
+                        // Delete old image if exists
+                        if ($package->package_image) {
+                            try {
+                                $oldPath = $supabaseService->extractPathFromUrl($package->package_image);
+                                if ($oldPath) {
+                                    $supabaseService->delete($oldPath);
+                                }
+                            } catch (\Exception $e) {
+                                // Log but continue
+                                Log::warning('Failed to delete old draft package image', [
+                                    'package_id' => $package->id,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+                        
+                        // Upload new image
+                        $imageData = base64_decode($validated['package_image']);
+                        $fileName = 'draft_' . $package->id . '_' . uniqid() . '_' . time() . '.jpg';
+                        $path = 'package_images/' . $fileName;
+                        
+                        $supabaseService->upload($path, $imageData, 'Failed to upload package image');
+                        $validated['package_image'] = $supabaseService->getPublicUrl($path);
+                    } catch (\Exception $e) {
+                        Log::error('Error uploading package image', [
+                            'package_id' => $package->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                        
+                        return response()->json([
+                            'message' => 'Failed to upload package image',
+                            'error' => $e->getMessage(),
+                        ], 500, [
+                            'Content-Type' => 'application/json',
+                        ]);
+                    }
+                }
+            } else {
+                // Keep existing image if no new image provided
+                unset($validated['package_image']);
+            }
+            
+            // Update package
+            $package->update($validated);
+            
+            // Reload to get updated data
+            $package->refresh();
+            
+            // Manually serialize to handle nullable status
+            $packageData = [
+                'id' => $package->id,
+                'merchant_id' => $package->merchant_id,
+                'customer_name' => $package->customer_name,
+                'customer_phone' => $package->customer_phone,
+                'customer_email' => $package->customer_email,
+                'delivery_address' => $package->delivery_address,
+                'delivery_latitude' => $package->delivery_latitude,
+                'delivery_longitude' => $package->delivery_longitude,
+                'payment_type' => $package->payment_type,
+                'amount' => (float) $package->amount,
+                'package_image' => $package->package_image,
+                'package_description' => $package->package_description,
+                'tracking_code' => $package->tracking_code,
+                'status' => $package->status,
+                'is_draft' => $package->is_draft,
+                'created_at' => $package->created_at->toIso8601String(),
+                'updated_at' => $package->updated_at->toIso8601String(),
+            ];
+            
+            return response()->json([
+                'message' => 'Draft package updated successfully',
+                'package' => $packageData,
+            ], 200, [
+                'Content-Type' => 'application/json',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422, [
+                'Content-Type' => 'application/json',
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Draft package not found',
+                'error' => 'The specified draft package does not exist or does not belong to you.',
+            ], 404, [
+                'Content-Type' => 'application/json',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error updating draft package', [
+                'package_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred while updating the draft',
+                'error' => $e->getMessage(),
+            ], 500, [
+                'Content-Type' => 'application/json',
+            ]);
+        }
+    }
 }
