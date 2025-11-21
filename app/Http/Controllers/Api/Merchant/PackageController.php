@@ -397,13 +397,17 @@ class PackageController extends Controller
      */
     public function saveDraft(Request $request)
     {
-        // Ensure we return JSON for API routes
+        // Force JSON response - set headers early
         $request->headers->set('Accept', 'application/json');
+        $request->headers->set('Content-Type', 'application/json');
         
         // Clear any existing output buffers to prevent HTML from being sent
         while (ob_get_level()) {
             ob_end_clean();
         }
+        
+        // Write directly to error log to ensure we see it
+        error_log('saveDraft method called - user_id: ' . ($request->user()?->id ?? 'null'));
         
         // Log that we're entering the method
         Log::info('saveDraft method called', [
@@ -549,33 +553,35 @@ class PackageController extends Controller
                 ob_end_clean();
             }
             
-            // Convert packages to array for JSON response
+            // Convert packages to array for JSON response - use toArray() for safe serialization
             $packagesArray = [];
             foreach ($createdDrafts as $pkg) {
                 try {
-                    $createdAt = $pkg->created_at;
-                    $updatedAt = $pkg->updated_at;
+                    // Use toArray() which handles all serialization safely
+                    $packageArray = $pkg->toArray();
                     
+                    // Ensure proper types and handle nulls
                     $packagesArray[] = [
-                        'id' => $pkg->id,
-                        'merchant_id' => $pkg->merchant_id,
-                        'customer_name' => $pkg->customer_name,
-                        'customer_phone' => $pkg->customer_phone,
-                        'customer_email' => $pkg->customer_email,
-                        'delivery_address' => $pkg->delivery_address,
-                        'delivery_latitude' => $pkg->delivery_latitude ? (float) $pkg->delivery_latitude : null,
-                        'delivery_longitude' => $pkg->delivery_longitude ? (float) $pkg->delivery_longitude : null,
-                        'payment_type' => $pkg->payment_type,
-                        'amount' => (float) $pkg->amount,
-                        'package_image' => $pkg->package_image,
-                        'package_description' => $pkg->package_description,
-                        'tracking_code' => $pkg->tracking_code,
-                        'status' => $pkg->status, // May be null for drafts
-                        'is_draft' => (bool) $pkg->is_draft,
-                        'created_at' => $createdAt ? ($createdAt instanceof \Carbon\Carbon ? $createdAt->toISOString() : (string) $createdAt) : now()->toISOString(),
-                        'updated_at' => $updatedAt ? ($updatedAt instanceof \Carbon\Carbon ? $updatedAt->toISOString() : (string) $updatedAt) : now()->toISOString(),
+                        'id' => (int) $packageArray['id'],
+                        'merchant_id' => (int) $packageArray['merchant_id'],
+                        'customer_name' => (string) $packageArray['customer_name'],
+                        'customer_phone' => (string) $packageArray['customer_phone'],
+                        'customer_email' => $packageArray['customer_email'] ?? null,
+                        'delivery_address' => (string) $packageArray['delivery_address'],
+                        'delivery_latitude' => isset($packageArray['delivery_latitude']) ? (float) $packageArray['delivery_latitude'] : null,
+                        'delivery_longitude' => isset($packageArray['delivery_longitude']) ? (float) $packageArray['delivery_longitude'] : null,
+                        'payment_type' => (string) $packageArray['payment_type'],
+                        'amount' => (float) $packageArray['amount'],
+                        'package_image' => $packageArray['package_image'] ?? null,
+                        'package_description' => $packageArray['package_description'] ?? null,
+                        'tracking_code' => $packageArray['tracking_code'] ?? null,
+                        'status' => $packageArray['status'] ?? null, // May be null for drafts
+                        'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
+                        'created_at' => $packageArray['created_at'] ?? now()->toDateTimeString(),
+                        'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
                     ];
                 } catch (\Exception $serializeEx) {
+                    error_log('Error serializing package: ' . $serializeEx->getMessage());
                     Log::warning('Error serializing package', [
                         'package_id' => $pkg->id ?? 'unknown',
                         'error' => $serializeEx->getMessage(),
@@ -603,28 +609,43 @@ class PackageController extends Controller
             // Ensure we return JSON with proper headers
             $statusCode = count($createdDrafts) > 0 ? 201 : 422;
             
-            // Use json_encode to ensure proper encoding
-            $json = json_encode($responseData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            
-            if ($json === false) {
-                Log::error('JSON encoding failed', [
-                    'json_error' => json_last_error_msg(),
-                    'response_data' => $responseData,
-                ]);
-                return response()->json([
-                    'message' => 'Error encoding response',
-                    'error' => json_last_error_msg(),
-                ], 500, ['Content-Type' => 'application/json']);
-            }
+            error_log('saveDraft preparing response - status: ' . $statusCode . ', packages: ' . count($packagesArray));
             
             Log::info('saveDraft returning response', [
                 'status_code' => $statusCode,
-                'json_length' => strlen($json),
+                'packages_count' => count($packagesArray),
+                'response_data_keys' => array_keys($responseData),
             ]);
             
-            return response($json, $statusCode)
-                ->header('Content-Type', 'application/json')
-                ->header('Cache-Control', 'no-cache, no-store, must-revalidate');
+            // Use Laravel's response()->json() which handles encoding automatically
+            // Ensure no output before response
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+            
+            try {
+                $response = response()->json($responseData, $statusCode);
+                $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+                $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
+                $response->headers->set('X-Content-Type-Options', 'nosniff');
+                
+                error_log('saveDraft response created successfully');
+                
+                return $response;
+            } catch (\Exception $responseEx) {
+                error_log('Error creating JSON response: ' . $responseEx->getMessage());
+                Log::error('Error creating response', [
+                    'error' => $responseEx->getMessage(),
+                    'trace' => $responseEx->getTraceAsString(),
+                ]);
+                
+                // Fallback: return simple JSON response
+                return response()->json([
+                    'message' => 'Draft saved but error serializing response',
+                    'created_count' => count($createdDrafts),
+                    'error' => $responseEx->getMessage(),
+                ], 500)->header('Content-Type', 'application/json');
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             // Ensure output buffer is clean
             if (ob_get_level()) {
