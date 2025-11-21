@@ -417,15 +417,20 @@ class PackageController extends Controller
         ]);
         
         try {
+            error_log('saveDraft: Starting validation');
+            
             // Normalize empty strings to null for optional fields
             $packages = $request->packages;
             
             if (!is_array($packages) || empty($packages)) {
+                error_log('saveDraft: Packages validation failed - not array or empty');
                 return response()->json([
                     'message' => 'Validation failed',
                     'errors' => ['packages' => ['The packages field is required and must be a non-empty array.']],
                 ], 422, ['Content-Type' => 'application/json']);
             }
+            
+            error_log('saveDraft: Packages count: ' . count($packages));
             foreach ($packages as &$package) {
                 if (isset($package['customer_email'])) {
                     $email = trim($package['customer_email']);
@@ -439,6 +444,8 @@ class PackageController extends Controller
             }
             $request->merge(['packages' => $packages]);
 
+            error_log('saveDraft: Running Laravel validation');
+            
             $request->validate([
                 'packages' => 'required|array|min:1|max:50',
                 'packages.*.customer_name' => 'required|string|max:255',
@@ -453,14 +460,20 @@ class PackageController extends Controller
                 'packages.*.package_image' => 'nullable|string', // Base64 encoded image
             ]);
 
+            error_log('saveDraft: Validation passed, getting merchant');
+            
             $merchant = $request->user()->merchant;
             $packages = $request->packages;
             $createdDrafts = [];
             $errors = [];
             $imageUploadErrors = [];
+            
+            error_log('saveDraft: Starting package creation loop, count: ' . count($packages));
 
             foreach ($packages as $index => $packageData) {
                 try {
+                    error_log("saveDraft: Processing package index $index");
+                    
                     // Handle package image (base64 to Supabase)
                     $packageImageUrl = null;
                     $imageError = null;
@@ -530,11 +543,15 @@ class PackageController extends Controller
                     }
 
                     $createdDrafts[] = $package;
+                    error_log("saveDraft: Package $index created successfully, ID: " . $package->id);
+                    
                     Log::info('Package draft created', [
                         'package_id' => $package->id,
                         'is_draft' => $package->is_draft,
                     ]);
                 } catch (\Exception $e) {
+                    error_log("saveDraft: Error creating package $index: " . $e->getMessage());
+                    
                     Log::error('Error creating draft package', [
                         'index' => $index,
                         'error' => $e->getMessage(),
@@ -548,10 +565,14 @@ class PackageController extends Controller
                 }
             }
 
+            error_log('saveDraft: Package creation loop complete. Created: ' . count($createdDrafts) . ', Errors: ' . count($errors));
+
             // Clean output buffer before sending response
             while (ob_get_level() > 0) {
                 ob_end_clean();
             }
+            
+            error_log('saveDraft: Starting response serialization');
             
             // Convert packages to array for JSON response - use toArray() for safe serialization
             $packagesArray = [];
