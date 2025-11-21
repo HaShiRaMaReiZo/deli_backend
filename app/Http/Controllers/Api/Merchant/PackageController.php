@@ -557,7 +557,8 @@ class PackageController extends Controller
                             'package_image' => $packageImageUrl,
                             'package_description' => $packageData['package_description'] ?? null,
                             'is_draft' => true,
-                            // No tracking_code, no status - these will be set when submitting
+                            'status' => null, // Explicitly set to null for drafts
+                            // No tracking_code - this will be set when submitting
                         ];
                         
                         error_log("saveDraft: Calling Package::create() for index $index");
