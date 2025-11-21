@@ -499,22 +499,27 @@ class PackageController extends Controller
                             } else {
                                 error_log("saveDraft: Creating SupabaseStorageService for index $index");
                                 try {
+                                    // Generate unique filename for draft (no tracking code yet)
+                                    $filename = 'draft_' . time() . '_' . uniqid() . '_' . $index . '.jpg';
+                                    $path = 'package_images/' . $filename;
+                                    
                                     $supabaseService = new SupabaseStorageService();
                                     error_log("saveDraft: SupabaseStorageService created successfully for index $index");
-                                } catch (\Throwable $serviceEx) {
-                                    error_log("saveDraft: Failed to create SupabaseStorageService for index $index: " . $serviceEx->getMessage());
-                                    error_log("saveDraft: Service exception type: " . get_class($serviceEx));
-                                    throw $serviceEx; // Re-throw to be caught by outer catch
-                                }
-                                
-                                error_log("saveDraft: Uploading image to Supabase for index $index");
-                                try {
-                                    $packageImageUrl = $supabaseService->uploadPackageImage($imageData);
-                                    error_log("saveDraft: Image uploaded successfully for index $index, URL: " . ($packageImageUrl ?? 'null'));
+                                    
+                                    error_log("saveDraft: Uploading image to Supabase for index $index, path: $path");
+                                    $supabaseErrorMessage = null;
+                                    $packageImageUrl = $supabaseService->upload($path, $imageData, $supabaseErrorMessage);
+                                    
+                                    if ($packageImageUrl) {
+                                        error_log("saveDraft: Image uploaded successfully for index $index, URL: " . $packageImageUrl);
+                                    } else {
+                                        error_log("saveDraft: Image upload failed for index $index, error: " . ($supabaseErrorMessage ?? 'Unknown error'));
+                                        $imageError = $supabaseErrorMessage ?? 'Failed to upload image to Supabase';
+                                    }
                                 } catch (\Throwable $uploadEx) {
-                                    error_log("saveDraft: Failed to upload image for index $index: " . $uploadEx->getMessage());
+                                    error_log("saveDraft: Exception during image upload for index $index: " . $uploadEx->getMessage());
                                     error_log("saveDraft: Upload exception type: " . get_class($uploadEx));
-                                    throw $uploadEx; // Re-throw to be caught by outer catch
+                                    $imageError = 'Failed to upload image: ' . $uploadEx->getMessage();
                                 }
                             }
                         } catch (\Exception $e) {
