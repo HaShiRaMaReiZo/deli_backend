@@ -504,6 +504,8 @@ class PackageController extends Controller
 
                     // Create draft package (no tracking code, no status, is_draft = true)
                     try {
+                        error_log("saveDraft: Preparing package data for index $index");
+                        
                         // For drafts, we don't set status - it will be null
                         // The database default might set it, but we explicitly set it to null if possible
                         $packageDataToSave = [
@@ -522,14 +524,24 @@ class PackageController extends Controller
                             // No tracking_code, no status - these will be set when submitting
                         ];
                         
+                        error_log("saveDraft: Calling Package::create() for index $index");
                         $package = Package::create($packageDataToSave);
+                        error_log("saveDraft: Package::create() succeeded for index $index, ID: " . $package->id);
                     } catch (QueryException $dbEx) {
+                        error_log("saveDraft: QueryException for index $index: " . $dbEx->getMessage());
+                        error_log("saveDraft: SQL: " . $dbEx->getSql());
+                        error_log("saveDraft: Bindings: " . json_encode($dbEx->getBindings()));
                         // Re-throw to be caught by outer handler
                         throw $dbEx;
                     } catch (PDOException $pdoEx) {
+                        error_log("saveDraft: PDOException for index $index: " . $pdoEx->getMessage());
+                        error_log("saveDraft: Code: " . $pdoEx->getCode());
                         // Re-throw to be caught by outer handler
                         throw $pdoEx;
                     } catch (\Exception $ex) {
+                        error_log("saveDraft: Exception for index $index: " . $ex->getMessage());
+                        error_log("saveDraft: Exception type: " . get_class($ex));
+                        error_log("saveDraft: Exception trace: " . $ex->getTraceAsString());
                         // Re-throw to be caught by outer handler
                         throw $ex;
                     }
@@ -751,14 +763,20 @@ class PackageController extends Controller
                 ob_end_clean();
             }
             
+            error_log('saveDraft: Caught exception in outer catch: ' . $e->getMessage());
+            error_log('saveDraft: Exception type: ' . get_class($e));
+            error_log('saveDraft: Exception trace: ' . substr($e->getTraceAsString(), 0, 500));
+            
             Log::error('Draft package save error', [
                 'error' => $e->getMessage(),
+                'type' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
                 'message' => 'An error occurred while saving drafts',
                 'error' => $e->getMessage(),
+                'type' => get_class($e),
             ], 500, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
