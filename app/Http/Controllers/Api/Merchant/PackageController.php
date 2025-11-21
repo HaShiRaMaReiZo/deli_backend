@@ -828,8 +828,14 @@ class PackageController extends Controller
      */
     public function getDrafts(Request $request)
     {
+        // Force output to error log immediately
+        error_log('========================================');
+        error_log('getDrafts METHOD CALLED');
+        error_log('User ID: ' . ($request->user()?->id ?? 'NULL'));
+        error_log('Request Path: ' . $request->path());
+        error_log('========================================');
+        
         try {
-            error_log('getDrafts method called - user_id: ' . ($request->user()?->id ?? 'null'));
             
             // Clear any existing output buffers
             while (ob_get_level()) {

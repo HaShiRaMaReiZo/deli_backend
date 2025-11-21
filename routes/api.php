@@ -29,16 +29,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('merchant')->middleware('role:merchant')->group(function () {
         Route::get('/packages', [MerchantPackageController::class, 'index']);
         Route::post('/packages/bulk', [MerchantPackageController::class, 'bulkStore']);
+        
+        // Draft routes - MUST come before parameterized routes
+        Route::post('/packages/draft', [MerchantPackageController::class, 'saveDraft']);
+        Route::get('/packages/draft', [MerchantPackageController::class, 'getDrafts']);
+        Route::post('/packages/draft/submit', [MerchantPackageController::class, 'submitDrafts']);
+        
+        // Parameterized routes - must come after specific routes
         Route::get('/packages/{id}', [MerchantPackageController::class, 'show']);
         Route::get('/packages/{id}/track', [MerchantPackageController::class, 'track']);
         Route::get('/packages/{id}/live-location', [MerchantPackageController::class, 'liveLocation']);
         Route::get('/packages/{id}/history', [MerchantPackageController::class, 'history']);
-        
-        // Draft routes
-        Route::post('/packages/draft', [MerchantPackageController::class, 'saveDraft']);
-        Route::get('/packages/draft', [MerchantPackageController::class, 'getDrafts']);
-        Route::post('/packages/draft/submit', [MerchantPackageController::class, 'submitDrafts']);
-
     });
 
     // Rider routes
