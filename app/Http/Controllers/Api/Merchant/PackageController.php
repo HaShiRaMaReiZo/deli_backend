@@ -829,22 +829,30 @@ class PackageController extends Controller
     public function getDrafts(Request $request)
     {
         try {
+            error_log('getDrafts method called - user_id: ' . ($request->user()?->id ?? 'null'));
+            
             // Clear any existing output buffers
             while (ob_get_level()) {
                 ob_end_clean();
             }
             
+            error_log('getDrafts: Getting merchant');
             $merchant = $request->user()->merchant;
             
+            error_log('getDrafts: Querying drafts for merchant_id: ' . $merchant->id);
             $drafts = Package::where('merchant_id', $merchant->id)
                 ->where('is_draft', true)
                 ->orderBy('created_at', 'desc')
                 ->get();
+            
+            error_log('getDrafts: Found ' . count($drafts) . ' drafts');
 
             // Manually serialize packages to handle null status
+            error_log('getDrafts: Starting serialization');
             $draftsArray = [];
             foreach ($drafts as $pkg) {
                 try {
+                    error_log('getDrafts: Serializing package ID: ' . $pkg->id);
                     $packageArray = $pkg->toArray();
                     $draftsArray[] = [
                         'id' => (int) $packageArray['id'],
@@ -866,6 +874,7 @@ class PackageController extends Controller
                         'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
                     ];
                 } catch (\Exception $e) {
+                    error_log('getDrafts: Error serializing package: ' . $e->getMessage());
                     Log::warning('Error serializing draft package', [
                         'package_id' => $pkg->id ?? 'unknown',
                         'error' => $e->getMessage(),
@@ -874,15 +883,24 @@ class PackageController extends Controller
                 }
             }
 
-            return response()->json($draftsArray, 200, [
-                'Content-Type' => 'application/json',
-                'Cache-Control' => 'no-cache, no-store, must-revalidate',
-            ]);
+            error_log('getDrafts: Serialization complete, returning ' . count($draftsArray) . ' packages');
+            
+            $response = response()->json($draftsArray, 200);
+            $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+            $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
+            
+            error_log('getDrafts: Response created successfully');
+            
+            return $response;
         } catch (\Throwable $e) {
             // Ensure output buffer is clean
             while (ob_get_level()) {
                 ob_end_clean();
             }
+            
+            error_log('getDrafts: Caught exception: ' . $e->getMessage());
+            error_log('getDrafts: Exception type: ' . get_class($e));
+            error_log('getDrafts: Exception trace: ' . substr($e->getTraceAsString(), 0, 500));
             
             Log::error('Error getting drafts', [
                 'error' => $e->getMessage(),
@@ -893,6 +911,7 @@ class PackageController extends Controller
             return response()->json([
                 'message' => 'An error occurred while fetching drafts',
                 'error' => $e->getMessage(),
+                'type' => get_class($e),
             ], 500, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
