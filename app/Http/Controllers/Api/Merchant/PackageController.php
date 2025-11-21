@@ -473,34 +473,65 @@ class PackageController extends Controller
             foreach ($packages as $index => $packageData) {
                 try {
                     error_log("saveDraft: Processing package index $index");
+                    error_log("saveDraft: Package data keys: " . implode(', ', array_keys($packageData)));
                     
                     // Handle package image (base64 to Supabase)
                     $packageImageUrl = null;
                     $imageError = null;
+                    
+                    error_log("saveDraft: Checking for package image, has_image: " . (isset($packageData['package_image']) && !empty($packageData['package_image']) ? 'yes' : 'no'));
+                    
                     if (!empty($packageData['package_image'])) {
                         try {
+                            error_log("saveDraft: Processing image for index $index");
                             $base64String = $packageData['package_image'];
                             
                             if (strpos($base64String, ',') !== false) {
                                 $base64String = explode(',', $base64String, 2)[1];
                             }
                             
+                            error_log("saveDraft: Decoding base64 image for index $index");
                             $imageData = base64_decode($base64String, true);
                             
                             if ($imageData === false) {
+                                error_log("saveDraft: Failed to decode base64 for index $index");
                                 $imageError = 'Failed to decode base64 image data';
                             } else {
-                                $supabaseService = new SupabaseStorageService();
-                                $packageImageUrl = $supabaseService->uploadPackageImage($imageData);
+                                error_log("saveDraft: Creating SupabaseStorageService for index $index");
+                                try {
+                                    $supabaseService = new SupabaseStorageService();
+                                    error_log("saveDraft: SupabaseStorageService created successfully for index $index");
+                                } catch (\Throwable $serviceEx) {
+                                    error_log("saveDraft: Failed to create SupabaseStorageService for index $index: " . $serviceEx->getMessage());
+                                    error_log("saveDraft: Service exception type: " . get_class($serviceEx));
+                                    throw $serviceEx; // Re-throw to be caught by outer catch
+                                }
+                                
+                                error_log("saveDraft: Uploading image to Supabase for index $index");
+                                try {
+                                    $packageImageUrl = $supabaseService->uploadPackageImage($imageData);
+                                    error_log("saveDraft: Image uploaded successfully for index $index, URL: " . ($packageImageUrl ?? 'null'));
+                                } catch (\Throwable $uploadEx) {
+                                    error_log("saveDraft: Failed to upload image for index $index: " . $uploadEx->getMessage());
+                                    error_log("saveDraft: Upload exception type: " . get_class($uploadEx));
+                                    throw $uploadEx; // Re-throw to be caught by outer catch
+                                }
                             }
                         } catch (\Exception $e) {
+                            error_log("saveDraft: Exception during image upload for index $index: " . $e->getMessage());
+                            error_log("saveDraft: Exception type: " . get_class($e));
                             $imageError = 'Failed to upload image: ' . $e->getMessage();
                             Log::warning('Draft image upload error', [
                                 'index' => $index,
                                 'error' => $e->getMessage(),
+                                'type' => get_class($e),
                             ]);
                         }
+                    } else {
+                        error_log("saveDraft: No image provided for index $index");
                     }
+                    
+                    error_log("saveDraft: Image handling complete for index $index, imageError: " . ($imageError ?? 'null'));
 
                     // Create draft package (no tracking code, no status, is_draft = true)
                     try {
@@ -561,12 +592,15 @@ class PackageController extends Controller
                         'package_id' => $package->id,
                         'is_draft' => $package->is_draft,
                     ]);
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     error_log("saveDraft: Error creating package $index: " . $e->getMessage());
+                    error_log("saveDraft: Error type: " . get_class($e));
+                    error_log("saveDraft: Error trace: " . substr($e->getTraceAsString(), 0, 500));
                     
                     Log::error('Error creating draft package', [
                         'index' => $index,
                         'error' => $e->getMessage(),
+                        'type' => get_class($e),
                         'trace' => $e->getTraceAsString(),
                     ]);
                     $errors[] = [
@@ -757,15 +791,15 @@ class PackageController extends Controller
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Ensure output buffer is clean
             while (ob_get_level()) {
                 ob_end_clean();
             }
             
-            error_log('saveDraft: Caught exception in outer catch: ' . $e->getMessage());
-            error_log('saveDraft: Exception type: ' . get_class($e));
-            error_log('saveDraft: Exception trace: ' . substr($e->getTraceAsString(), 0, 500));
+            error_log('saveDraft: Caught throwable in outer catch: ' . $e->getMessage());
+            error_log('saveDraft: Throwable type: ' . get_class($e));
+            error_log('saveDraft: Throwable trace: ' . substr($e->getTraceAsString(), 0, 500));
             
             Log::error('Draft package save error', [
                 'error' => $e->getMessage(),
