@@ -67,10 +67,16 @@ class SupabaseStorageService
             }
 
             if ($response->successful()) {
-                // Generate public URL
-                $publicUrl = "{$this->url}/storage/v1/object/public/{$this->bucket}/{$path}";
+                // Generate public URL - URL encode the path to handle special characters
+                // Split path into parts and encode each part separately to preserve slashes
+                $pathParts = explode('/', $path);
+                $encodedPathParts = array_map('rawurlencode', $pathParts);
+                $encodedPath = implode('/', $encodedPathParts);
+                
+                $publicUrl = "{$this->url}/storage/v1/object/public/{$this->bucket}/{$encodedPath}";
                 Log::info('Image uploaded to Supabase successfully', [
                     'path' => $path,
+                    'encoded_path' => $encodedPath,
                     'url' => $publicUrl,
                 ]);
                 return $publicUrl;
