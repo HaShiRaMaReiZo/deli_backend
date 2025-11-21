@@ -569,8 +569,8 @@ class PackageController extends Controller
                         'tracking_code' => $packageArray['tracking_code'] ?? null,
                         'status' => $packageArray['status'] ?? null, // May be null for drafts
                         'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
-                        'created_at' => $packageArray['created_at'] ?? now()->toDateTimeString(),
-                        'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
+                        'created_at' => $pkg->created_at->toIso8601String(),
+                        'updated_at' => $pkg->updated_at->toIso8601String(),
                     ];
                 } catch (\Exception $serializeEx) {
                     Log::warning('Error serializing package', [
@@ -728,8 +728,8 @@ class PackageController extends Controller
                         'tracking_code' => $packageArray['tracking_code'] ?? null,
                         'status' => $packageArray['status'] ?? null,
                         'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
-                        'created_at' => $packageArray['created_at'] ?? now()->toDateTimeString(),
-                        'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
+                        'created_at' => $pkg->created_at->toIso8601String(),
+                        'updated_at' => $pkg->updated_at->toIso8601String(),
                     ];
                 } catch (\Exception $e) {
                     Log::warning('Error serializing draft package', [
