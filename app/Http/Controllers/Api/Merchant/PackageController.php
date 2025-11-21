@@ -39,7 +39,6 @@ class PackageController extends Controller
     public function bulkStore(Request $request)
     {
         try {
-            // Ensure output buffer is clean
             if (ob_get_level()) {
                 ob_end_clean();
             }
@@ -229,7 +228,6 @@ class PackageController extends Controller
                 'image_upload_errors' => $imageUploadErrors, // Include image upload errors
             ], count($createdPackages) > 0 ? 201 : 422)->header('Content-Type', 'application/json');
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Ensure output buffer is clean
             if (ob_get_level()) {
                 ob_end_clean();
             }
@@ -397,40 +395,20 @@ class PackageController extends Controller
      */
     public function saveDraft(Request $request)
     {
-        // Force JSON response - set headers early
-        $request->headers->set('Accept', 'application/json');
-        $request->headers->set('Content-Type', 'application/json');
-        
-        // Clear any existing output buffers to prevent HTML from being sent
         while (ob_get_level()) {
             ob_end_clean();
         }
         
-        // Write directly to error log to ensure we see it
-        error_log('saveDraft method called - user_id: ' . ($request->user()?->id ?? 'null'));
-        
-        // Log that we're entering the method
-        Log::info('saveDraft method called', [
-            'has_packages' => $request->has('packages'),
-            'user_id' => $request->user()?->id,
-            'packages_count' => is_array($request->packages) ? count($request->packages) : 0,
-        ]);
-        
         try {
-            error_log('saveDraft: Starting validation');
-            
             // Normalize empty strings to null for optional fields
             $packages = $request->packages;
             
             if (!is_array($packages) || empty($packages)) {
-                error_log('saveDraft: Packages validation failed - not array or empty');
                 return response()->json([
                     'message' => 'Validation failed',
                     'errors' => ['packages' => ['The packages field is required and must be a non-empty array.']],
                 ], 422, ['Content-Type' => 'application/json']);
             }
-            
-            error_log('saveDraft: Packages count: ' . count($packages));
             foreach ($packages as &$package) {
                 if (isset($package['customer_email'])) {
                     $email = trim($package['customer_email']);
@@ -444,8 +422,6 @@ class PackageController extends Controller
             }
             $request->merge(['packages' => $packages]);
 
-            error_log('saveDraft: Running Laravel validation');
-            
             $request->validate([
                 'packages' => 'required|array|min:1|max:50',
                 'packages.*.customer_name' => 'required|string|max:255',
@@ -460,127 +436,85 @@ class PackageController extends Controller
                 'packages.*.package_image' => 'nullable|string', // Base64 encoded image
             ]);
 
-            error_log('saveDraft: Validation passed, getting merchant');
-            
             $merchant = $request->user()->merchant;
             $packages = $request->packages;
             $createdDrafts = [];
             $errors = [];
             $imageUploadErrors = [];
-            
-            error_log('saveDraft: Starting package creation loop, count: ' . count($packages));
 
             foreach ($packages as $index => $packageData) {
                 try {
-                    error_log("saveDraft: Processing package index $index");
-                    error_log("saveDraft: Package data keys: " . implode(', ', array_keys($packageData)));
-                    
                     // Handle package image (base64 to Supabase)
                     $packageImageUrl = null;
                     $imageError = null;
                     
-                    error_log("saveDraft: Checking for package image, has_image: " . (isset($packageData['package_image']) && !empty($packageData['package_image']) ? 'yes' : 'no'));
-                    
                     if (!empty($packageData['package_image'])) {
                         try {
-                            error_log("saveDraft: Processing image for index $index");
                             $base64String = $packageData['package_image'];
                             
                             if (strpos($base64String, ',') !== false) {
                                 $base64String = explode(',', $base64String, 2)[1];
                             }
                             
-                            error_log("saveDraft: Decoding base64 image for index $index");
                             $imageData = base64_decode($base64String, true);
                             
                             if ($imageData === false) {
-                                error_log("saveDraft: Failed to decode base64 for index $index");
                                 $imageError = 'Failed to decode base64 image data';
                             } else {
-                                error_log("saveDraft: Creating SupabaseStorageService for index $index");
                                 try {
                                     // Generate unique filename for draft (no tracking code yet)
                                     $filename = 'draft_' . time() . '_' . uniqid() . '_' . $index . '.jpg';
                                     $path = 'package_images/' . $filename;
                                     
                                     $supabaseService = new SupabaseStorageService();
-                                    error_log("saveDraft: SupabaseStorageService created successfully for index $index");
-                                    
-                                    error_log("saveDraft: Uploading image to Supabase for index $index, path: $path");
                                     $supabaseErrorMessage = null;
                                     $packageImageUrl = $supabaseService->upload($path, $imageData, $supabaseErrorMessage);
                                     
-                                    if ($packageImageUrl) {
-                                        error_log("saveDraft: Image uploaded successfully for index $index, URL: " . $packageImageUrl);
-                                    } else {
-                                        error_log("saveDraft: Image upload failed for index $index, error: " . ($supabaseErrorMessage ?? 'Unknown error'));
+                                    if (!$packageImageUrl) {
                                         $imageError = $supabaseErrorMessage ?? 'Failed to upload image to Supabase';
                                     }
                                 } catch (\Throwable $uploadEx) {
-                                    error_log("saveDraft: Exception during image upload for index $index: " . $uploadEx->getMessage());
-                                    error_log("saveDraft: Upload exception type: " . get_class($uploadEx));
                                     $imageError = 'Failed to upload image: ' . $uploadEx->getMessage();
+                                    Log::warning('Draft image upload error', [
+                                        'index' => $index,
+                                        'error' => $uploadEx->getMessage(),
+                                    ]);
                                 }
                             }
                         } catch (\Exception $e) {
-                            error_log("saveDraft: Exception during image upload for index $index: " . $e->getMessage());
-                            error_log("saveDraft: Exception type: " . get_class($e));
                             $imageError = 'Failed to upload image: ' . $e->getMessage();
                             Log::warning('Draft image upload error', [
                                 'index' => $index,
                                 'error' => $e->getMessage(),
-                                'type' => get_class($e),
                             ]);
                         }
-                    } else {
-                        error_log("saveDraft: No image provided for index $index");
                     }
-                    
-                    error_log("saveDraft: Image handling complete for index $index, imageError: " . ($imageError ?? 'null'));
 
-                    // Create draft package (no tracking code, no status, is_draft = true)
-                    try {
-                        error_log("saveDraft: Preparing package data for index $index");
-                        
-                        // For drafts, we don't set status - it will be null
-                        // The database default might set it, but we explicitly set it to null if possible
-                        $packageDataToSave = [
-                            'merchant_id' => $merchant->id,
+                    // Create draft package
+                    $packageDataToSave = [
+                        'merchant_id' => $merchant->id,
+                        'customer_name' => $packageData['customer_name'],
+                        'customer_phone' => $packageData['customer_phone'],
+                        'customer_email' => $packageData['customer_email'] ?? null,
+                        'delivery_address' => $packageData['delivery_address'],
+                        'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
+                        'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
+                        'payment_type' => $packageData['payment_type'],
+                        'amount' => $packageData['amount'],
+                        'package_image' => $packageImageUrl,
+                        'package_description' => $packageData['package_description'] ?? null,
+                        'is_draft' => true,
+                        'status' => null,
+                    ];
+                    
+                    $package = Package::create($packageDataToSave);
+
+                    if ($imageError) {
+                        $imageUploadErrors[] = [
+                            'index' => $index,
                             'customer_name' => $packageData['customer_name'],
-                            'customer_phone' => $packageData['customer_phone'],
-                            'customer_email' => $packageData['customer_email'] ?? null,
-                            'delivery_address' => $packageData['delivery_address'],
-                            'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
-                            'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
-                            'payment_type' => $packageData['payment_type'],
-                            'amount' => $packageData['amount'],
-                            'package_image' => $packageImageUrl,
-                            'package_description' => $packageData['package_description'] ?? null,
-                            'is_draft' => true,
-                            'status' => null, // Explicitly set to null for drafts
-                            // No tracking_code - this will be set when submitting
+                            'error' => $imageError,
                         ];
-                        
-                        error_log("saveDraft: Calling Package::create() for index $index");
-                        $package = Package::create($packageDataToSave);
-                        error_log("saveDraft: Package::create() succeeded for index $index, ID: " . $package->id);
-                    } catch (QueryException $dbEx) {
-                        error_log("saveDraft: QueryException for index $index: " . $dbEx->getMessage());
-                        error_log("saveDraft: SQL: " . $dbEx->getSql());
-                        error_log("saveDraft: Bindings: " . json_encode($dbEx->getBindings()));
-                        // Re-throw to be caught by outer handler
-                        throw $dbEx;
-                    } catch (PDOException $pdoEx) {
-                        error_log("saveDraft: PDOException for index $index: " . $pdoEx->getMessage());
-                        error_log("saveDraft: Code: " . $pdoEx->getCode());
-                        // Re-throw to be caught by outer handler
-                        throw $pdoEx;
-                    } catch (\Exception $ex) {
-                        error_log("saveDraft: Exception for index $index: " . $ex->getMessage());
-                        error_log("saveDraft: Exception type: " . get_class($ex));
-                        error_log("saveDraft: Exception trace: " . $ex->getTraceAsString());
-                        // Re-throw to be caught by outer handler
-                        throw $ex;
                     }
 
                     if ($imageError) {
@@ -592,22 +526,11 @@ class PackageController extends Controller
                     }
 
                     $createdDrafts[] = $package;
-                    error_log("saveDraft: Package $index created successfully, ID: " . $package->id);
-                    
-                    Log::info('Package draft created', [
-                        'package_id' => $package->id,
-                        'is_draft' => $package->is_draft,
-                    ]);
                 } catch (\Throwable $e) {
-                    error_log("saveDraft: Error creating package $index: " . $e->getMessage());
-                    error_log("saveDraft: Error type: " . get_class($e));
-                    error_log("saveDraft: Error trace: " . substr($e->getTraceAsString(), 0, 500));
-                    
                     Log::error('Error creating draft package', [
                         'index' => $index,
                         'error' => $e->getMessage(),
                         'type' => get_class($e),
-                        'trace' => $e->getTraceAsString(),
                     ]);
                     $errors[] = [
                         'index' => $index,
@@ -617,14 +540,10 @@ class PackageController extends Controller
                 }
             }
 
-            error_log('saveDraft: Package creation loop complete. Created: ' . count($createdDrafts) . ', Errors: ' . count($errors));
-
             // Clean output buffer before sending response
             while (ob_get_level() > 0) {
                 ob_end_clean();
             }
-            
-            error_log('saveDraft: Starting response serialization');
             
             // Convert packages to array for JSON response - use toArray() for safe serialization
             $packagesArray = [];
@@ -654,13 +573,10 @@ class PackageController extends Controller
                         'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
                     ];
                 } catch (\Exception $serializeEx) {
-                    error_log('Error serializing package: ' . $serializeEx->getMessage());
                     Log::warning('Error serializing package', [
                         'package_id' => $pkg->id ?? 'unknown',
                         'error' => $serializeEx->getMessage(),
-                        'trace' => $serializeEx->getTraceAsString(),
                     ]);
-                    // Skip this package but continue with others
                 }
             }
             
@@ -673,54 +589,13 @@ class PackageController extends Controller
                 'image_upload_errors' => $imageUploadErrors,
             ];
             
-            Log::info('saveDraft response prepared', [
-                'created_count' => count($createdDrafts),
-                'packages_count' => count($packagesArray),
-                'response_data_keys' => array_keys($responseData),
-            ]);
-            
-            // Ensure we return JSON with proper headers
             $statusCode = count($createdDrafts) > 0 ? 201 : 422;
             
-            error_log('saveDraft preparing response - status: ' . $statusCode . ', packages: ' . count($packagesArray));
-            
-            Log::info('saveDraft returning response', [
-                'status_code' => $statusCode,
-                'packages_count' => count($packagesArray),
-                'response_data_keys' => array_keys($responseData),
+            return response()->json($responseData, $statusCode, [
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
             ]);
-            
-            // Use Laravel's response()->json() which handles encoding automatically
-            // Ensure no output before response
-            while (ob_get_level() > 0) {
-                ob_end_clean();
-            }
-            
-            try {
-                $response = response()->json($responseData, $statusCode);
-                $response->headers->set('Content-Type', 'application/json; charset=utf-8');
-                $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
-                $response->headers->set('X-Content-Type-Options', 'nosniff');
-                
-                error_log('saveDraft response created successfully');
-                
-                return $response;
-            } catch (\Exception $responseEx) {
-                error_log('Error creating JSON response: ' . $responseEx->getMessage());
-                Log::error('Error creating response', [
-                    'error' => $responseEx->getMessage(),
-                    'trace' => $responseEx->getTraceAsString(),
-                ]);
-                
-                // Fallback: return simple JSON response
-                return response()->json([
-                    'message' => 'Draft saved but error serializing response',
-                    'created_count' => count($createdDrafts),
-                    'error' => $responseEx->getMessage(),
-                ], 500)->header('Content-Type', 'application/json');
-            }
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Ensure output buffer is clean
             if (ob_get_level()) {
                 ob_end_clean();
             }
@@ -730,7 +605,6 @@ class PackageController extends Controller
                 'errors' => $e->errors(),
             ], 422)->header('Content-Type', 'application/json');
         } catch (QueryException $e) {
-            // Ensure output buffer is clean
             while (ob_get_level()) {
                 ob_end_clean();
             }
@@ -766,7 +640,6 @@ class PackageController extends Controller
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
             ]);
         } catch (PDOException $e) {
-            // Ensure output buffer is clean
             while (ob_get_level()) {
                 ob_end_clean();
             }
@@ -798,25 +671,18 @@ class PackageController extends Controller
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
             ]);
         } catch (\Throwable $e) {
-            // Ensure output buffer is clean
             while (ob_get_level()) {
                 ob_end_clean();
             }
             
-            error_log('saveDraft: Caught throwable in outer catch: ' . $e->getMessage());
-            error_log('saveDraft: Throwable type: ' . get_class($e));
-            error_log('saveDraft: Throwable trace: ' . substr($e->getTraceAsString(), 0, 500));
-            
             Log::error('Draft package save error', [
                 'error' => $e->getMessage(),
                 'type' => get_class($e),
-                'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
                 'message' => 'An error occurred while saving drafts',
                 'error' => $e->getMessage(),
-                'type' => get_class($e),
             ], 500, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
@@ -829,37 +695,22 @@ class PackageController extends Controller
      */
     public function getDrafts(Request $request)
     {
-        // Force output to error log immediately
-        error_log('========================================');
-        error_log('getDrafts METHOD CALLED');
-        error_log('User ID: ' . ($request->user()?->id ?? 'NULL'));
-        error_log('Request Path: ' . $request->path());
-        error_log('========================================');
-        
         try {
-            
-            // Clear any existing output buffers
             while (ob_get_level()) {
                 ob_end_clean();
             }
             
-            error_log('getDrafts: Getting merchant');
             $merchant = $request->user()->merchant;
             
-            error_log('getDrafts: Querying drafts for merchant_id: ' . $merchant->id);
             $drafts = Package::where('merchant_id', $merchant->id)
                 ->where('is_draft', true)
                 ->orderBy('created_at', 'desc')
                 ->get();
-            
-            error_log('getDrafts: Found ' . count($drafts) . ' drafts');
 
             // Manually serialize packages to handle null status
-            error_log('getDrafts: Starting serialization');
             $draftsArray = [];
             foreach ($drafts as $pkg) {
                 try {
-                    error_log('getDrafts: Serializing package ID: ' . $pkg->id);
                     $packageArray = $pkg->toArray();
                     $draftsArray[] = [
                         'id' => (int) $packageArray['id'],
@@ -875,50 +726,36 @@ class PackageController extends Controller
                         'package_image' => $packageArray['package_image'] ?? null,
                         'package_description' => $packageArray['package_description'] ?? null,
                         'tracking_code' => $packageArray['tracking_code'] ?? null,
-                        'status' => $packageArray['status'] ?? null, // Nullable for drafts
+                        'status' => $packageArray['status'] ?? null,
                         'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
                         'created_at' => $packageArray['created_at'] ?? now()->toDateTimeString(),
                         'updated_at' => $packageArray['updated_at'] ?? now()->toDateTimeString(),
                     ];
                 } catch (\Exception $e) {
-                    error_log('getDrafts: Error serializing package: ' . $e->getMessage());
                     Log::warning('Error serializing draft package', [
                         'package_id' => $pkg->id ?? 'unknown',
                         'error' => $e->getMessage(),
                     ]);
-                    // Skip this package but continue with others
                 }
             }
 
-            error_log('getDrafts: Serialization complete, returning ' . count($draftsArray) . ' packages');
-            
-            $response = response()->json($draftsArray, 200);
-            $response->headers->set('Content-Type', 'application/json; charset=utf-8');
-            $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
-            
-            error_log('getDrafts: Response created successfully');
-            
-            return $response;
+            return response()->json($draftsArray, 200, [
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
         } catch (\Throwable $e) {
-            // Ensure output buffer is clean
             while (ob_get_level()) {
                 ob_end_clean();
             }
             
-            error_log('getDrafts: Caught exception: ' . $e->getMessage());
-            error_log('getDrafts: Exception type: ' . get_class($e));
-            error_log('getDrafts: Exception trace: ' . substr($e->getTraceAsString(), 0, 500));
-            
             Log::error('Error getting drafts', [
                 'error' => $e->getMessage(),
                 'type' => get_class($e),
-                'trace' => $e->getTraceAsString(),
             ]);
             
             return response()->json([
                 'message' => 'An error occurred while fetching drafts',
                 'error' => $e->getMessage(),
-                'type' => get_class($e),
             ], 500, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
@@ -997,7 +834,6 @@ class PackageController extends Controller
                 'errors' => $errors,
             ], count($submittedPackages) > 0 ? 200 : 422)->header('Content-Type', 'application/json');
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Ensure output buffer is clean
             if (ob_get_level()) {
                 ob_end_clean();
             }
@@ -1007,7 +843,6 @@ class PackageController extends Controller
                 'errors' => $e->errors(),
             ], 422)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
-            // Ensure output buffer is clean
             if (ob_get_level()) {
                 ob_end_clean();
             }
