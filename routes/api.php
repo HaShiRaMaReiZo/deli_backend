@@ -34,6 +34,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/packages/draft', [MerchantPackageController::class, 'saveDraft']);
         Route::get('/packages/draft', [MerchantPackageController::class, 'getDrafts']);
         Route::post('/packages/draft/submit', [MerchantPackageController::class, 'submitDrafts']);
+        Route::delete('/packages/draft/{id}', [MerchantPackageController::class, 'deleteDraft']);
         
         // Parameterized routes - must come after specific routes
         Route::get('/packages/{id}', [MerchantPackageController::class, 'show']);

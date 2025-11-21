@@ -858,4 +858,62 @@ class PackageController extends Controller
             ], 500)->header('Content-Type', 'application/json');
         }
     }
+
+    /**
+     * Delete a draft package
+     */
+    public function deleteDraft(Request $request, $id)
+    {
+        try {
+            $merchant = $request->user()->merchant;
+            
+            $package = Package::where('merchant_id', $merchant->id)
+                ->where('is_draft', true)
+                ->findOrFail($id);
+            
+            // Delete associated image from Supabase if exists
+            if ($package->package_image) {
+                try {
+                    $supabaseService = new SupabaseStorageService();
+                    $path = $supabaseService->extractPathFromUrl($package->package_image);
+                    if ($path) {
+                        $supabaseService->delete($path);
+                    }
+                } catch (\Exception $e) {
+                    // Log but don't fail if image deletion fails
+                    Log::warning('Failed to delete draft package image', [
+                        'package_id' => $package->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            $package->delete();
+            
+            return response()->json([
+                'message' => 'Draft package deleted successfully',
+            ], 200, [
+                'Content-Type' => 'application/json',
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Draft package not found',
+                'error' => 'The specified draft package does not exist or does not belong to you.',
+            ], 404, [
+                'Content-Type' => 'application/json',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error deleting draft package', [
+                'package_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred while deleting the draft',
+                'error' => $e->getMessage(),
+            ], 500, [
+                'Content-Type' => 'application/json',
+            ]);
+        }
+    }
 }
