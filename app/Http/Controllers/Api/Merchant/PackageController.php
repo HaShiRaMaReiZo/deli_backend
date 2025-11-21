@@ -408,6 +408,12 @@ class PackageController extends Controller
         // Start output buffering to catch any accidental output
         ob_start();
         
+        // Log that we're entering the method
+        Log::info('saveDraft method called', [
+            'has_packages' => $request->has('packages'),
+            'user_id' => $request->user()?->id,
+        ]);
+        
         try {
             // Normalize empty strings to null for optional fields
             $packages = $request->packages;
@@ -483,7 +489,9 @@ class PackageController extends Controller
 
                     // Create draft package (no tracking code, no status, is_draft = true)
                     try {
-                        $package = Package::create([
+                        // For drafts, we don't set status - it will be null
+                        // The database default might set it, but we explicitly set it to null if possible
+                        $packageDataToSave = [
                             'merchant_id' => $merchant->id,
                             'customer_name' => $packageData['customer_name'],
                             'customer_phone' => $packageData['customer_phone'],
@@ -497,7 +505,9 @@ class PackageController extends Controller
                             'package_description' => $packageData['package_description'] ?? null,
                             'is_draft' => true,
                             // No tracking_code, no status - these will be set when submitting
-                        ]);
+                        ];
+                        
+                        $package = Package::create($packageDataToSave);
                     } catch (QueryException $dbEx) {
                         // Re-throw to be caught by outer handler
                         throw $dbEx;
