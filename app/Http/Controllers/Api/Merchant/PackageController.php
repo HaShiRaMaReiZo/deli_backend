@@ -10,7 +10,10 @@ use App\Services\SupabaseStorageService;
 use App\Events\PackageStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\QueryException;
+use PDOException;
 
 class PackageController extends Controller
 {
@@ -394,9 +397,19 @@ class PackageController extends Controller
      */
     public function saveDraft(Request $request)
     {
+        // Ensure we return JSON for API routes
+        $request->headers->set('Accept', 'application/json');
+        
         try {
             // Normalize empty strings to null for optional fields
             $packages = $request->packages;
+            
+            if (!is_array($packages) || empty($packages)) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['packages' => ['The packages field is required and must be a non-empty array.']],
+                ], 422, ['Content-Type' => 'application/json']);
+            }
             foreach ($packages as &$package) {
                 if (isset($package['customer_email'])) {
                     $email = trim($package['customer_email']);
@@ -461,21 +474,32 @@ class PackageController extends Controller
                     }
 
                     // Create draft package (no tracking code, no status, is_draft = true)
-                    $package = Package::create([
-                        'merchant_id' => $merchant->id,
-                        'customer_name' => $packageData['customer_name'],
-                        'customer_phone' => $packageData['customer_phone'],
-                        'customer_email' => $packageData['customer_email'] ?? null,
-                        'delivery_address' => $packageData['delivery_address'],
-                        'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
-                        'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
-                        'payment_type' => $packageData['payment_type'],
-                        'amount' => $packageData['amount'],
-                        'package_image' => $packageImageUrl,
-                        'package_description' => $packageData['package_description'] ?? null,
-                        'is_draft' => true,
-                        // No tracking_code, no status - these will be set when submitting
-                    ]);
+                    try {
+                        $package = Package::create([
+                            'merchant_id' => $merchant->id,
+                            'customer_name' => $packageData['customer_name'],
+                            'customer_phone' => $packageData['customer_phone'],
+                            'customer_email' => $packageData['customer_email'] ?? null,
+                            'delivery_address' => $packageData['delivery_address'],
+                            'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
+                            'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
+                            'payment_type' => $packageData['payment_type'],
+                            'amount' => $packageData['amount'],
+                            'package_image' => $packageImageUrl,
+                            'package_description' => $packageData['package_description'] ?? null,
+                            'is_draft' => true,
+                            // No tracking_code, no status - these will be set when submitting
+                        ]);
+                    } catch (QueryException $dbEx) {
+                        // Re-throw to be caught by outer handler
+                        throw $dbEx;
+                    } catch (PDOException $pdoEx) {
+                        // Re-throw to be caught by outer handler
+                        throw $pdoEx;
+                    } catch (\Exception $ex) {
+                        // Re-throw to be caught by outer handler
+                        throw $ex;
+                    }
 
                     if ($imageError) {
                         $imageUploadErrors[] = [
@@ -523,21 +547,52 @@ class PackageController extends Controller
                 'error' => $e->getMessage(),
                 'sql' => $e->getSql(),
                 'bindings' => $e->getBindings(),
+                'code' => $e->getCode(),
             ]);
             
             // Check if it's a constraint violation (likely tracking_code NOT NULL)
-            if (strpos($e->getMessage(), 'tracking_code') !== false || 
-                strpos($e->getMessage(), 'null value') !== false) {
+            $errorMessage = $e->getMessage();
+            if (strpos($errorMessage, 'tracking_code') !== false || 
+                strpos($errorMessage, 'null value') !== false ||
+                strpos($errorMessage, 'NOT NULL') !== false ||
+                $e->getCode() == '23502') { // PostgreSQL NOT NULL violation code
                 return response()->json([
                     'message' => 'Database error: Please run migrations. The tracking_code column needs to be nullable for drafts.',
                     'error' => 'Database constraint violation. Migrations may not have been run.',
-                ], 500)->header('Content-Type', 'application/json');
+                    'details' => 'Error: ' . $errorMessage,
+                ], 500, ['Content-Type' => 'application/json']);
             }
             
             return response()->json([
                 'message' => 'Database error occurred while saving drafts',
+                'error' => $errorMessage,
+            ], 500, ['Content-Type' => 'application/json']);
+        } catch (PDOException $e) {
+            // Ensure output buffer is clean
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            Log::error('Draft package save PDO error', [
                 'error' => $e->getMessage(),
-            ], 500)->header('Content-Type', 'application/json');
+                'code' => $e->getCode(),
+            ]);
+            
+            $errorMessage = $e->getMessage();
+            if (strpos($errorMessage, 'tracking_code') !== false || 
+                strpos($errorMessage, 'null value') !== false ||
+                strpos($errorMessage, 'NOT NULL') !== false) {
+                return response()->json([
+                    'message' => 'Database error: Please run migrations. The tracking_code column needs to be nullable for drafts.',
+                    'error' => 'Database constraint violation. Migrations may not have been run.',
+                    'details' => 'Error: ' . $errorMessage,
+                ], 500, ['Content-Type' => 'application/json']);
+            }
+            
+            return response()->json([
+                'message' => 'Database error occurred while saving drafts',
+                'error' => $errorMessage,
+            ], 500, ['Content-Type' => 'application/json']);
         } catch (\Exception $e) {
             // Ensure output buffer is clean
             if (ob_get_level()) {
