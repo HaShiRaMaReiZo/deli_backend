@@ -405,13 +405,11 @@ class PackageController extends Controller
             ob_end_clean();
         }
         
-        // Start output buffering to catch any accidental output
-        ob_start();
-        
         // Log that we're entering the method
         Log::info('saveDraft method called', [
             'has_packages' => $request->has('packages'),
             'user_id' => $request->user()?->id,
+            'packages_count' => is_array($request->packages) ? count($request->packages) : 0,
         ]);
         
         try {
@@ -528,7 +526,16 @@ class PackageController extends Controller
                     }
 
                     $createdDrafts[] = $package;
+                    Log::info('Package draft created', [
+                        'package_id' => $package->id,
+                        'is_draft' => $package->is_draft,
+                    ]);
                 } catch (\Exception $e) {
+                    Log::error('Error creating draft package', [
+                        'index' => $index,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
                     $errors[] = [
                         'index' => $index,
                         'customer_name' => $packageData['customer_name'] ?? 'Unknown',
@@ -538,19 +545,86 @@ class PackageController extends Controller
             }
 
             // Clean output buffer before sending response
-            ob_end_clean();
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
             
-            return response()->json([
+            // Convert packages to array for JSON response
+            $packagesArray = [];
+            foreach ($createdDrafts as $pkg) {
+                try {
+                    $createdAt = $pkg->created_at;
+                    $updatedAt = $pkg->updated_at;
+                    
+                    $packagesArray[] = [
+                        'id' => $pkg->id,
+                        'merchant_id' => $pkg->merchant_id,
+                        'customer_name' => $pkg->customer_name,
+                        'customer_phone' => $pkg->customer_phone,
+                        'customer_email' => $pkg->customer_email,
+                        'delivery_address' => $pkg->delivery_address,
+                        'delivery_latitude' => $pkg->delivery_latitude ? (float) $pkg->delivery_latitude : null,
+                        'delivery_longitude' => $pkg->delivery_longitude ? (float) $pkg->delivery_longitude : null,
+                        'payment_type' => $pkg->payment_type,
+                        'amount' => (float) $pkg->amount,
+                        'package_image' => $pkg->package_image,
+                        'package_description' => $pkg->package_description,
+                        'tracking_code' => $pkg->tracking_code,
+                        'status' => $pkg->status, // May be null for drafts
+                        'is_draft' => (bool) $pkg->is_draft,
+                        'created_at' => $createdAt ? ($createdAt instanceof \Carbon\Carbon ? $createdAt->toISOString() : (string) $createdAt) : now()->toISOString(),
+                        'updated_at' => $updatedAt ? ($updatedAt instanceof \Carbon\Carbon ? $updatedAt->toISOString() : (string) $updatedAt) : now()->toISOString(),
+                    ];
+                } catch (\Exception $serializeEx) {
+                    Log::warning('Error serializing package', [
+                        'package_id' => $pkg->id ?? 'unknown',
+                        'error' => $serializeEx->getMessage(),
+                        'trace' => $serializeEx->getTraceAsString(),
+                    ]);
+                    // Skip this package but continue with others
+                }
+            }
+            
+            $responseData = [
                 'message' => count($createdDrafts) . ' draft package(s) saved successfully',
                 'created_count' => count($createdDrafts),
                 'failed_count' => count($errors),
-                'packages' => $createdDrafts,
+                'packages' => $packagesArray,
                 'errors' => $errors,
                 'image_upload_errors' => $imageUploadErrors,
-            ], count($createdDrafts) > 0 ? 201 : 422, [
-                'Content-Type' => 'application/json',
-                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ];
+            
+            Log::info('saveDraft response prepared', [
+                'created_count' => count($createdDrafts),
+                'packages_count' => count($packagesArray),
+                'response_data_keys' => array_keys($responseData),
             ]);
+            
+            // Ensure we return JSON with proper headers
+            $statusCode = count($createdDrafts) > 0 ? 201 : 422;
+            
+            // Use json_encode to ensure proper encoding
+            $json = json_encode($responseData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            
+            if ($json === false) {
+                Log::error('JSON encoding failed', [
+                    'json_error' => json_last_error_msg(),
+                    'response_data' => $responseData,
+                ]);
+                return response()->json([
+                    'message' => 'Error encoding response',
+                    'error' => json_last_error_msg(),
+                ], 500, ['Content-Type' => 'application/json']);
+            }
+            
+            Log::info('saveDraft returning response', [
+                'status_code' => $statusCode,
+                'json_length' => strlen($json),
+            ]);
+            
+            return response($json, $statusCode)
+                ->header('Content-Type', 'application/json')
+                ->header('Cache-Control', 'no-cache, no-store, must-revalidate');
         } catch (\Illuminate\Validation\ValidationException $e) {
             // Ensure output buffer is clean
             if (ob_get_level()) {
