@@ -181,6 +181,9 @@ class PackageController extends Controller
                         }
                     }
 
+                    // Get current time in Myanmar timezone (UTC+6:30)
+                    $myanmarTime = now()->setTimezone('Asia/Yangon');
+                    
                     $package = Package::create([
                         'tracking_code' => $trackingCode,
                         'merchant_id' => $merchant->id,
@@ -195,6 +198,7 @@ class PackageController extends Controller
                         'package_image' => $packageImageUrl,
                         'package_description' => $packageData['package_description'] ?? null,
                         'status' => 'registered',
+                        'registered_at' => $myanmarTime,
                     ]);
 
                     // Log status history
@@ -569,6 +573,7 @@ class PackageController extends Controller
                         'tracking_code' => $packageArray['tracking_code'] ?? null,
                         'status' => $packageArray['status'] ?? null, // May be null for drafts
                         'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
+                        'registered_at' => $pkg->registered_at ? $pkg->registered_at->toIso8601String() : null,
                         'created_at' => $pkg->created_at->toIso8601String(),
                         'updated_at' => $pkg->updated_at->toIso8601String(),
                     ];
@@ -728,6 +733,7 @@ class PackageController extends Controller
                         'tracking_code' => $packageArray['tracking_code'] ?? null,
                         'status' => $packageArray['status'] ?? null,
                         'is_draft' => isset($packageArray['is_draft']) ? (bool) $packageArray['is_draft'] : false,
+                        'registered_at' => $pkg->registered_at ? $pkg->registered_at->toIso8601String() : null,
                         'created_at' => $pkg->created_at->toIso8601String(),
                         'updated_at' => $pkg->updated_at->toIso8601String(),
                     ];
@@ -797,11 +803,15 @@ class PackageController extends Controller
                     // Generate tracking code
                     $trackingCode = TrackingCodeService::generate();
 
-                    // Update package: set tracking code, status, and is_draft = false
+                    // Get current time in Myanmar timezone (UTC+6:30)
+                    $myanmarTime = now()->setTimezone('Asia/Yangon');
+                    
+                    // Update package: set tracking code, status, is_draft = false, and registered_at
                     $package->update([
                         'tracking_code' => $trackingCode,
                         'status' => 'registered',
                         'is_draft' => false,
+                        'registered_at' => $myanmarTime,
                     ]);
 
                     // Create initial status history entry
@@ -1029,6 +1039,7 @@ class PackageController extends Controller
                 'tracking_code' => $package->tracking_code,
                 'status' => $package->status,
                 'is_draft' => $package->is_draft,
+                'registered_at' => $package->registered_at ? $package->registered_at->toIso8601String() : null,
                 'created_at' => $package->created_at->toIso8601String(),
                 'updated_at' => $package->updated_at->toIso8601String(),
             ];
