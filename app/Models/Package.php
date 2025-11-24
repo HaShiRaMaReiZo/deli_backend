@@ -13,7 +13,6 @@ class Package extends Model
         'merchant_id',
         'customer_name',
         'customer_phone',
-        'customer_email',
         'delivery_address',
         'delivery_latitude',
         'delivery_longitude',

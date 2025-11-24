@@ -44,16 +44,8 @@ class PackageController extends Controller
             }
             
             // Normalize empty strings to null for optional fields
-            // Also handle invalid email formats (if it doesn't contain @, treat as null)
             $packages = $request->packages;
             foreach ($packages as &$package) {
-                // Handle customer_email - if empty or doesn't look like an email, set to null
-                if (isset($package['customer_email'])) {
-                    $email = trim($package['customer_email']);
-                    if (empty($email) || strpos($email, '@') === false) {
-                        $package['customer_email'] = null;
-                    }
-                }
                 // Handle package_description - if empty, set to null
                 if (isset($package['package_description']) && empty(trim($package['package_description']))) {
                     $package['package_description'] = null;
@@ -65,7 +57,6 @@ class PackageController extends Controller
                 'packages' => 'required|array|min:1|max:50', // Limit to 50 packages per request
                 'packages.*.customer_name' => 'required|string|max:255',
                 'packages.*.customer_phone' => 'required|string|max:20',
-                'packages.*.customer_email' => 'nullable|email',
                 'packages.*.delivery_address' => 'required|string',
                 'packages.*.delivery_latitude' => 'nullable|numeric',
                 'packages.*.delivery_longitude' => 'nullable|numeric',
@@ -189,7 +180,6 @@ class PackageController extends Controller
                         'merchant_id' => $merchant->id,
                         'customer_name' => $packageData['customer_name'],
                         'customer_phone' => $packageData['customer_phone'],
-                        'customer_email' => $packageData['customer_email'] ?? null,
                         'delivery_address' => $packageData['delivery_address'],
                         'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
                         'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
@@ -414,12 +404,6 @@ class PackageController extends Controller
                 ], 422, ['Content-Type' => 'application/json']);
             }
             foreach ($packages as &$package) {
-                if (isset($package['customer_email'])) {
-                    $email = trim($package['customer_email']);
-                    if (empty($email) || strpos($email, '@') === false) {
-                        $package['customer_email'] = null;
-                    }
-                }
                 if (isset($package['package_description']) && empty(trim($package['package_description']))) {
                     $package['package_description'] = null;
                 }
@@ -430,7 +414,6 @@ class PackageController extends Controller
                 'packages' => 'required|array|min:1|max:50',
                 'packages.*.customer_name' => 'required|string|max:255',
                 'packages.*.customer_phone' => 'required|string|max:20',
-                'packages.*.customer_email' => 'nullable|email',
                 'packages.*.delivery_address' => 'required|string',
                 'packages.*.delivery_latitude' => 'nullable|numeric',
                 'packages.*.delivery_longitude' => 'nullable|numeric',
@@ -499,7 +482,6 @@ class PackageController extends Controller
                         'merchant_id' => $merchant->id,
                         'customer_name' => $packageData['customer_name'],
                         'customer_phone' => $packageData['customer_phone'],
-                        'customer_email' => $packageData['customer_email'] ?? null,
                         'delivery_address' => $packageData['delivery_address'],
                         'delivery_latitude' => $packageData['delivery_latitude'] ?? null,
                         'delivery_longitude' => $packageData['delivery_longitude'] ?? null,
@@ -562,7 +544,6 @@ class PackageController extends Controller
                         'merchant_id' => (int) $packageArray['merchant_id'],
                         'customer_name' => (string) $packageArray['customer_name'],
                         'customer_phone' => (string) $packageArray['customer_phone'],
-                        'customer_email' => $packageArray['customer_email'] ?? null,
                         'delivery_address' => (string) $packageArray['delivery_address'],
                         'delivery_latitude' => isset($packageArray['delivery_latitude']) ? (float) $packageArray['delivery_latitude'] : null,
                         'delivery_longitude' => isset($packageArray['delivery_longitude']) ? (float) $packageArray['delivery_longitude'] : null,
@@ -722,7 +703,6 @@ class PackageController extends Controller
                         'merchant_id' => (int) $packageArray['merchant_id'],
                         'customer_name' => (string) $packageArray['customer_name'],
                         'customer_phone' => (string) $packageArray['customer_phone'],
-                        'customer_email' => $packageArray['customer_email'] ?? null,
                         'delivery_address' => (string) $packageArray['delivery_address'],
                         'delivery_latitude' => isset($packageArray['delivery_latitude']) ? (float) $packageArray['delivery_latitude'] : null,
                         'delivery_longitude' => isset($packageArray['delivery_longitude']) ? (float) $packageArray['delivery_longitude'] : null,
@@ -942,7 +922,6 @@ class PackageController extends Controller
             $validated = $request->validate([
                 'customer_name' => 'required|string|max:255',
                 'customer_phone' => 'required|string|max:20',
-                'customer_email' => 'nullable|email|max:255',
                 'delivery_address' => 'required|string|max:500',
                 'payment_type' => 'required|in:cod,prepaid',
                 'amount' => 'required|numeric|min:0',
@@ -1028,7 +1007,6 @@ class PackageController extends Controller
                 'merchant_id' => $package->merchant_id,
                 'customer_name' => $package->customer_name,
                 'customer_phone' => $package->customer_phone,
-                'customer_email' => $package->customer_email,
                 'delivery_address' => $package->delivery_address,
                 'delivery_latitude' => $package->delivery_latitude,
                 'delivery_longitude' => $package->delivery_longitude,
