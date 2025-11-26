@@ -292,12 +292,18 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
+        // Write to log file immediately to verify method is called
+        $logFile = storage_path('logs/assign_pickup_debug.log');
+        file_put_contents($logFile, "=== METHOD CALLED ===\nTime: " . now()->toDateTimeString() . "\nMerchant ID: $merchantId\nRider ID: " . ($request->rider_id ?? 'null') . "\n\n", FILE_APPEND);
+        
         try {
             Log::info('assignPickupByMerchant: Starting', [
                 'merchant_id' => $merchantId,
                 'rider_id' => $request->rider_id,
                 'user_id' => $request->user()->id,
             ]);
+            
+            file_put_contents($logFile, "After Log::info call\n", FILE_APPEND);
 
             $request->validate([
                 'rider_id' => 'required|exists:riders,id',
@@ -447,11 +453,22 @@ class PackageController extends Controller
             $logContent .= "=== assignPickupByMerchant DEBUG END ===\n\n";
             file_put_contents($logFile, $logContent, FILE_APPEND);
             
-            return response()->json($responseData, 200, [
+            // Create response and verify it
+            $response = response()->json($responseData, 200, [
                 'Content-Type' => 'application/json; charset=utf-8',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
                 'X-Content-Type-Options' => 'nosniff',
             ]);
+            
+            $responseContent = $response->getContent();
+            $logContent = "Response created successfully\n";
+            $logContent .= "Response content: " . $responseContent . "\n";
+            $logContent .= "Response content length: " . strlen($responseContent) . "\n";
+            $logContent .= "Response status: " . $response->status() . "\n";
+            $logContent .= "=== assignPickupByMerchant DEBUG END ===\n\n";
+            file_put_contents($logFile, $logContent, FILE_APPEND);
+            
+            return $response;
         } catch (\Illuminate\Validation\ValidationException $e) {
             error_log('=== assignPickupByMerchant: ValidationException ===');
             error_log('Errors: ' . print_r($e->errors(), true));
