@@ -18,7 +18,7 @@ class PackageController extends Controller
         $rider = $request->user()->rider;
         
         // Check if we need to include delivered packages
-        $includeDelivered = $request->query('include_delivered', false);
+        $includeDelivered = $request->query('include_delivered', 'false') === 'true' || $request->query('include_delivered') === true;
         
         if ($includeDelivered) {
             // Return all packages including delivered ones
