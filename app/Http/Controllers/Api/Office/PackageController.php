@@ -91,6 +91,12 @@ class PackageController extends Controller
     public function assign(Request $request, $id)
     {
         try {
+            Log::info('assign: Starting', [
+                'package_id' => $id,
+                'rider_id' => $request->rider_id,
+                'user_id' => $request->user()->id,
+            ]);
+
             // Clear any previous output
             if (ob_get_level()) {
                 ob_clean();
@@ -100,8 +106,15 @@ class PackageController extends Controller
                 'rider_id' => 'required|exists:riders,id',
             ]);
 
+            Log::info('assign: Validation passed');
+
             $package = Package::findOrFail($id);
             $rider = \App\Models\Rider::findOrFail($request->rider_id);
+
+            Log::info('assign: Package and rider found', [
+                'package_status' => $package->status,
+                'rider_name' => $rider->name,
+            ]);
 
         // Determine assignment type based on current status
         // Delivery assignments: packages that are 'arrived_at_office' (ready to be assigned for delivery)
@@ -152,21 +165,31 @@ class PackageController extends Controller
             ]);
         }
 
-        // Ensure no output before response
-        if (ob_get_level()) {
-            ob_end_clean();
-        }
-
-        return response()->json([
+        $responseData = [
             'message' => $isDeliveryAssignment 
                 ? 'Package assigned for delivery successfully'
                 : 'Package assigned for pickup successfully',
             'assignment_type' => $assignmentType,
             'package' => $package->load(['merchant', 'currentRider', 'statusHistory']),
-        ], 200, [
+        ];
+
+        Log::info('assign: Sending success response', [
+            'assignment_type' => $assignmentType,
+        ]);
+
+        // Create response first, then clean any accidental output
+        $jsonResponse = response()->json($responseData, 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
+
+        // Clean output buffer without destroying Laravel's response buffer
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+
+        return $jsonResponse;
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
@@ -404,19 +427,28 @@ class PackageController extends Controller
                 'assigned_package_ids' => $assigned,
             ];
 
-            // Ensure no output before response
-            if (ob_get_level()) {
-                ob_end_clean();
-            }
-
             Log::info('assignPickupByMerchant: Sending success response', [
                 'assigned_count' => count($assigned),
+                'response_data' => $responseData,
             ]);
 
-            return response()->json($responseData, 200, [
+            // Create JSON response BEFORE clearing buffers
+            $jsonResponse = response()->json($responseData, 200, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                'X-Content-Type-Options' => 'nosniff',
             ]);
+
+            Log::info('assignPickupByMerchant: Response created', [
+                'response_size' => strlen(json_encode($responseData)),
+            ]);
+
+            // Clear any accidental output, but don't destroy Laravel's response buffer
+            if (ob_get_level() > 0) {
+                ob_clean();
+            }
+
+            return $jsonResponse;
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
