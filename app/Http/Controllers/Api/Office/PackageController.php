@@ -299,11 +299,6 @@ class PackageController extends Controller
                 'user_id' => $request->user()->id,
             ]);
 
-            // Clear any previous output - same as assign() method
-            if (ob_get_level()) {
-                ob_clean();
-            }
-
             $request->validate([
                 'rider_id' => 'required|exists:riders,id',
             ]);
@@ -378,16 +373,19 @@ class PackageController extends Controller
                         'created_at' => now(),
                     ]);
 
-                    // Broadcast status change via WebSocket (wrap in try-catch to prevent breaking response)
+                    // Broadcast status change via WebSocket - TEMPORARILY DISABLED
+                    // Disabled to isolate the empty response issue
+                    // TODO: Re-enable after fixing response issue
+                    /*
                     try {
                         event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
                     } catch (\Exception $eventException) {
-                        // Log but don't fail the assignment if event fails
                         Log::warning('Failed to broadcast package status change event', [
                             'package_id' => $package->id,
                             'error' => $eventException->getMessage(),
                         ]);
                     }
+                    */
 
                     $assigned[] = $package->id;
                 }
@@ -424,12 +422,9 @@ class PackageController extends Controller
                 'assigned_count' => count($assigned),
             ]);
 
-            // Create and return JSON response - same pattern as assign() method
-            return response()->json($responseData, 200, [
-                'Content-Type' => 'application/json',
-                'Cache-Control' => 'no-cache, no-store, must-revalidate',
-                'X-Content-Type-Options' => 'nosniff',
-            ]);
+            // Return response immediately - simplest possible approach
+            // Match the exact pattern from the working assign() method
+            return response()->json($responseData, 200);
         } catch (\Illuminate\Validation\ValidationException $e) {
             error_log('=== assignPickupByMerchant: ValidationException ===');
             error_log('Errors: ' . print_r($e->errors(), true));
