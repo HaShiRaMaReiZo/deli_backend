@@ -292,62 +292,50 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
-        // STEP 1: Verify method is being called
-        // Write to a file that we can check
-        file_put_contents(
-            storage_path('logs/assign_pickup_test.log'),
-            "METHOD CALLED: " . date('Y-m-d H:i:s') . "\n" .
-            "Merchant ID: $merchantId\n" .
-            "Rider ID: " . ($request->rider_id ?? 'null') . "\n" .
-            "User ID: " . ($request->user()->id ?? 'null') . "\n" .
-            "Request Method: " . $request->method() . "\n" .
-            "Request URI: " . $request->getRequestUri() . "\n\n",
-            FILE_APPEND
-        );
-        
-        // STEP 2: Try echo with immediate flush
-        // Clear all output buffers
-        while (ob_get_level() > 0) {
-            ob_end_clean();
+        try {
+            Log::info('assignPickupByMerchant: Starting', [
+                'merchant_id' => $merchantId,
+                'rider_id' => $request->rider_id,
+                'user_id' => $request->user()->id,
+            ]);
+
+            // Clear any previous output - EXACTLY like working assign() method
+            if (ob_get_level()) {
+                ob_clean();
+            }
+
+            // Return simple test response - EXACT same pattern as assign()
+            return response()->json([
+                'test' => true,
+                'message' => 'Test response - matching assign() method pattern',
+                'merchant_id' => (int) $merchantId,
+                'rider_id' => $request->rider_id ?? null,
+            ], 200, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422)->header('Content-Type', 'application/json');
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Merchant not found',
+                'error' => $e->getMessage(),
+            ], 404)->header('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            Log::error('assignPickupByMerchant: Exception', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'An error occurred',
+                'error' => $e->getMessage(),
+            ], 500)->header('Content-Type', 'application/json');
         }
-        
-        // Set headers
-        header('Content-Type: application/json; charset=utf-8');
-        header('Content-Length: 0'); // Will update after
-        http_response_code(200);
-        
-        // Create response data
-        $responseData = json_encode([
-            'test' => true,
-            'message' => 'Direct echo test',
-            'merchant_id' => (int) $merchantId,
-            'rider_id' => $request->rider_id ?? null,
-            'timestamp' => date('Y-m-d H:i:s'),
-        ]);
-        
-        // Update content length
-        header('Content-Length: ' . strlen($responseData));
-        
-        // Write to file what we're about to send
-        file_put_contents(
-            storage_path('logs/assign_pickup_test.log'),
-            "About to echo response. Length: " . strlen($responseData) . "\n" .
-            "Response: $responseData\n\n",
-            FILE_APPEND
-        );
-        
-        // Echo and flush immediately
-        echo $responseData;
-        flush();
-        
-        // Log that we sent it
-        file_put_contents(
-            storage_path('logs/assign_pickup_test.log'),
-            "Response sent. Exiting.\n\n",
-            FILE_APPEND
-        );
-        
-        exit(0);
         
         // Code below is unreachable but kept for reference
         // Uncomment after hardcoded test works
