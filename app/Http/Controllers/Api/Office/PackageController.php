@@ -415,35 +415,68 @@ class PackageController extends Controller
                 'assigned_package_ids' => $assigned,
             ];
 
+            // DEBUG: Print response data
+            error_log('=== assignPickupByMerchant DEBUG START ===');
+            error_log('Response Data Array: ' . print_r($responseData, true));
+            error_log('Assigned Count: ' . count($assigned));
+            error_log('Assigned Package IDs: ' . json_encode($assigned));
+            
+            // Try to encode JSON
+            $jsonString = json_encode($responseData);
+            error_log('JSON String: ' . $jsonString);
+            error_log('JSON String Length: ' . strlen($jsonString));
+            error_log('JSON Encode Error: ' . json_last_error_msg());
+            
             Log::info('assignPickupByMerchant: Sending success response', [
                 'assigned_count' => count($assigned),
                 'response_data' => $responseData,
+                'json_string' => $jsonString,
+                'json_length' => strlen($jsonString),
             ]);
 
-            // Create JSON response - don't clean buffers after creating response
+            // Create JSON response
             $jsonResponse = response()->json($responseData, 200, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
                 'X-Content-Type-Options' => 'nosniff',
             ]);
 
-            Log::info('assignPickupByMerchant: Response created', [
-                'response_size' => strlen(json_encode($responseData)),
-                'json_response' => json_encode($responseData),
+            // DEBUG: Check response object
+            error_log('Response Object Class: ' . get_class($jsonResponse));
+            error_log('Response Status: ' . $jsonResponse->status());
+            error_log('Response Headers: ' . print_r($jsonResponse->headers->all(), true));
+            
+            // Get response content
+            $responseContent = $jsonResponse->getContent();
+            error_log('Response Content: ' . $responseContent);
+            error_log('Response Content Length: ' . strlen($responseContent));
+            error_log('=== assignPickupByMerchant DEBUG END ===');
+
+            Log::info('assignPickupByMerchant: Response created and ready to send', [
+                'response_size' => strlen($responseContent),
+                'response_content' => $responseContent,
             ]);
 
             return $jsonResponse;
         } catch (\Illuminate\Validation\ValidationException $e) {
+            error_log('=== assignPickupByMerchant: ValidationException ===');
+            error_log('Errors: ' . print_r($e->errors(), true));
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
             ], 422)->header('Content-Type', 'application/json');
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            error_log('=== assignPickupByMerchant: ModelNotFoundException ===');
+            error_log('Error: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Rider or merchant not found',
                 'error' => $e->getMessage(),
             ], 404)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
+            error_log('=== assignPickupByMerchant: Exception ===');
+            error_log('Error: ' . $e->getMessage());
+            error_log('Trace: ' . $e->getTraceAsString());
+            
             Log::error('Error assigning pickup by merchant', [
                 'merchant_id' => $merchantId,
                 'rider_id' => $request->rider_id ?? null,
@@ -451,12 +484,15 @@ class PackageController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
             
-            return response()->json([
+            $errorResponse = response()->json([
                 'message' => 'Failed to assign rider for pickup',
                 'error' => $e->getMessage(),
             ], 500, [
                 'Content-Type' => 'application/json',
             ]);
+            
+            error_log('Error Response Content: ' . $errorResponse->getContent());
+            return $errorResponse;
         }
     }
 
