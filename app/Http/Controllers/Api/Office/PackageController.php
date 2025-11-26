@@ -90,12 +90,18 @@ class PackageController extends Controller
 
     public function assign(Request $request, $id)
     {
-        $request->validate([
-            'rider_id' => 'required|exists:riders,id',
-        ]);
+        try {
+            // Clear any previous output
+            if (ob_get_level()) {
+                ob_clean();
+            }
 
-        $package = Package::findOrFail($id);
-        $rider = \App\Models\Rider::findOrFail($request->rider_id);
+            $request->validate([
+                'rider_id' => 'required|exists:riders,id',
+            ]);
+
+            $package = Package::findOrFail($id);
+            $rider = \App\Models\Rider::findOrFail($request->rider_id);
 
         // Determine assignment type based on current status
         // Delivery assignments: packages that are 'arrived_at_office' (ready to be assigned for delivery)
@@ -136,8 +142,20 @@ class PackageController extends Controller
             'created_at' => now(),
         ]);
 
-        // Broadcast status change via WebSocket
-        event(new PackageStatusChanged($package->id, $package->status, $package->merchant_id));
+        // Broadcast status change via WebSocket (wrap in try-catch to prevent breaking response)
+        try {
+            event(new PackageStatusChanged($package->id, $package->status, $package->merchant_id));
+        } catch (\Exception $e) {
+            Log::warning('Failed to broadcast package status change event', [
+                'package_id' => $package->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Ensure no output before response
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
 
         return response()->json([
             'message' => $isDeliveryAssignment 
@@ -145,7 +163,40 @@ class PackageController extends Controller
                 : 'Package assigned for pickup successfully',
             'assignment_type' => $assignmentType,
             'package' => $package->load(['merchant', 'currentRider', 'statusHistory']),
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
         ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422)->header('Content-Type', 'application/json');
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Package or rider not found',
+                'error' => $e->getMessage(),
+            ], 404)->header('Content-Type', 'application/json');
+        } catch (\Exception $e) {
+            // Ensure no output before error response
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            Log::error('Error assigning rider to package', [
+                'package_id' => $id,
+                'rider_id' => $request->rider_id ?? null,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to assign rider',
+                'error' => $e->getMessage(),
+            ], 500, [
+                'Content-Type' => 'application/json',
+            ]);
+        }
     }
 
     public function bulkAssign(Request $request)
