@@ -277,6 +277,12 @@ class PackageController extends Controller
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
         try {
+            Log::info('assignPickupByMerchant: Starting', [
+                'merchant_id' => $merchantId,
+                'rider_id' => $request->rider_id,
+                'user_id' => $request->user()->id,
+            ]);
+
             // Clear any previous output
             if (ob_get_level()) {
                 ob_clean();
@@ -286,15 +292,28 @@ class PackageController extends Controller
                 'rider_id' => 'required|exists:riders,id',
             ]);
 
+            Log::info('assignPickupByMerchant: Validation passed');
+
             $rider = \App\Models\Rider::findOrFail($request->rider_id);
             $merchant = \App\Models\Merchant::findOrFail($merchantId);
+
+            Log::info('assignPickupByMerchant: Rider and merchant found', [
+                'rider_name' => $rider->name,
+                'merchant_name' => $merchant->business_name,
+            ]);
 
             // Get all registered packages from this merchant
             $packages = Package::where('merchant_id', $merchantId)
                 ->where('status', 'registered')
                 ->get();
 
+            Log::info('assignPickupByMerchant: Found packages', [
+                'count' => $packages->count(),
+                'package_ids' => $packages->pluck('id')->toArray(),
+            ]);
+
             if ($packages->isEmpty()) {
+                Log::warning('assignPickupByMerchant: No registered packages found');
                 return response()->json([
                     'message' => 'No registered packages found for this merchant',
                     'assigned_count' => 0,
@@ -305,12 +324,24 @@ class PackageController extends Controller
 
             DB::beginTransaction();
             try {
+                Log::info('assignPickupByMerchant: Starting transaction');
                 foreach ($packages as $package) {
+                    Log::info('assignPickupByMerchant: Processing package', [
+                        'package_id' => $package->id,
+                        'tracking_code' => $package->tracking_code,
+                    ]);
+
                     // Update package - assign for pickup
                     $package->current_rider_id = $rider->id;
                     $package->status = 'assigned_to_rider'; // Status for pickup assignment
                     $package->assigned_at = now();
                     $package->save();
+
+                    Log::info('assignPickupByMerchant: Package updated', [
+                        'package_id' => $package->id,
+                        'status' => $package->status,
+                        'rider_id' => $package->current_rider_id,
+                    ]);
 
                     // Create assignment record
                     RiderAssignment::create([
@@ -345,8 +376,15 @@ class PackageController extends Controller
                     $assigned[] = $package->id;
                 }
                 DB::commit();
+                Log::info('assignPickupByMerchant: Transaction committed', [
+                    'assigned_count' => count($assigned),
+                ]);
             } catch (\Exception $e) {
                 DB::rollBack();
+                Log::error('assignPickupByMerchant: Transaction failed', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
                 throw $e;
             }
 
@@ -370,6 +408,10 @@ class PackageController extends Controller
             if (ob_get_level()) {
                 ob_end_clean();
             }
+
+            Log::info('assignPickupByMerchant: Sending success response', [
+                'assigned_count' => count($assigned),
+            ]);
 
             return response()->json($responseData, 200, [
                 'Content-Type' => 'application/json',
