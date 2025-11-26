@@ -292,7 +292,28 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
+        // STEP 1: TEST WITH HARDCODED RESPONSE
+        // Uncomment the block below to test if route/middleware works
+        // If this works, the issue is in the method logic below
+        // If this also returns empty, the issue is in middleware/route configuration
+        /*
+        \Illuminate\Support\Facades\Log::info('TEST: Hardcoded response test');
+        return response()->json([
+            'test' => true,
+            'message' => 'Hardcoded test response - if you see this, route works',
+            'merchant_id' => $merchantId,
+            'rider_id' => $request->rider_id ?? null,
+        ], 200);
+        */
+        
         try {
+            // Force log to file AND error_log for Render visibility
+            $debugMsg = "=== assignPickupByMerchant CALLED ===\n";
+            $debugMsg .= "Time: " . date('Y-m-d H:i:s') . "\n";
+            $debugMsg .= "Merchant ID: $merchantId\n";
+            $debugMsg .= "Rider ID: " . ($request->rider_id ?? 'null') . "\n";
+            $debugMsg .= "User ID: " . ($request->user()->id ?? 'null') . "\n";
+            error_log($debugMsg);
             Log::info('assignPickupByMerchant: Starting', [
                 'merchant_id' => $merchantId,
                 'rider_id' => $request->rider_id,
@@ -421,10 +442,35 @@ class PackageController extends Controller
             Log::info('assignPickupByMerchant: Sending success response', [
                 'assigned_count' => count($assigned),
             ]);
-
-            // Return response immediately - simplest possible approach
-            // Match the exact pattern from the working assign() method
-            return response()->json($responseData, 200);
+            
+            // Log using both error_log (for Render) and Log facade (for Laravel logs)
+            \Illuminate\Support\Facades\Log::info('assignPickupByMerchant: About to create response', [
+                'assigned_count' => count($assigned),
+                'response_data' => $responseData,
+            ]);
+            
+            // Create response - simplest possible approach
+            $response = response()->json($responseData, 200);
+            
+            // Verify response has content
+            $content = $response->getContent();
+            \Illuminate\Support\Facades\Log::info('assignPickupByMerchant: Response created', [
+                'status' => $response->status(),
+                'content_length' => strlen($content),
+                'has_content' => !empty($content),
+            ]);
+            
+            // If content is empty, return a simple fallback
+            if (empty($content)) {
+                \Illuminate\Support\Facades\Log::error('assignPickupByMerchant: Response content is EMPTY! Returning fallback');
+                return response()->json([
+                    'message' => 'Rider assigned successfully',
+                    'assigned_count' => count($assigned),
+                    'assigned_package_ids' => $assigned,
+                ], 200);
+            }
+            
+            return $response;
         } catch (\Illuminate\Validation\ValidationException $e) {
             error_log('=== assignPickupByMerchant: ValidationException ===');
             error_log('Errors: ' . print_r($e->errors(), true));
