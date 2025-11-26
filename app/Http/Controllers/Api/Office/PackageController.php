@@ -415,17 +415,19 @@ class PackageController extends Controller
                 'assigned_package_ids' => $assigned,
             ];
 
-            // DEBUG: Print response data
-            error_log('=== assignPickupByMerchant DEBUG START ===');
-            error_log('Response Data Array: ' . print_r($responseData, true));
-            error_log('Assigned Count: ' . count($assigned));
-            error_log('Assigned Package IDs: ' . json_encode($assigned));
+            // Force write to log file directly
+            $logFile = storage_path('logs/assign_pickup_debug.log');
+            $logContent = "=== assignPickupByMerchant DEBUG START ===\n";
+            $logContent .= "Time: " . now()->toDateTimeString() . "\n";
+            $logContent .= "Response Data: " . json_encode($responseData, JSON_PRETTY_PRINT) . "\n";
+            $logContent .= "Assigned Count: " . count($assigned) . "\n";
+            $logContent .= "Assigned Package IDs: " . json_encode($assigned) . "\n";
             
             // Try to encode JSON
             $jsonString = json_encode($responseData);
-            error_log('JSON String: ' . $jsonString);
-            error_log('JSON String Length: ' . strlen($jsonString));
-            error_log('JSON Encode Error: ' . json_last_error_msg());
+            $logContent .= "JSON String: " . $jsonString . "\n";
+            $logContent .= "JSON String Length: " . strlen($jsonString) . "\n";
+            $logContent .= "JSON Encode Error: " . json_last_error_msg() . "\n";
             
             Log::info('assignPickupByMerchant: Sending success response', [
                 'assigned_count' => count($assigned),
@@ -434,30 +436,22 @@ class PackageController extends Controller
                 'json_length' => strlen($jsonString),
             ]);
 
-            // Create JSON response
-            $jsonResponse = response()->json($responseData, 200, [
-                'Content-Type' => 'application/json',
+            // Create JSON response - use simple approach
+            $logContent .= "Creating JSON response...\n";
+            
+            // Write log before creating response
+            file_put_contents($logFile, $logContent, FILE_APPEND);
+            
+            // Return response directly without storing in variable
+            $logContent = "Returning response...\n";
+            $logContent .= "=== assignPickupByMerchant DEBUG END ===\n\n";
+            file_put_contents($logFile, $logContent, FILE_APPEND);
+            
+            return response()->json($responseData, 200, [
+                'Content-Type' => 'application/json; charset=utf-8',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
                 'X-Content-Type-Options' => 'nosniff',
             ]);
-
-            // DEBUG: Check response object
-            error_log('Response Object Class: ' . get_class($jsonResponse));
-            error_log('Response Status: ' . $jsonResponse->status());
-            error_log('Response Headers: ' . print_r($jsonResponse->headers->all(), true));
-            
-            // Get response content
-            $responseContent = $jsonResponse->getContent();
-            error_log('Response Content: ' . $responseContent);
-            error_log('Response Content Length: ' . strlen($responseContent));
-            error_log('=== assignPickupByMerchant DEBUG END ===');
-
-            Log::info('assignPickupByMerchant: Response created and ready to send', [
-                'response_size' => strlen($responseContent),
-                'response_content' => $responseContent,
-            ]);
-
-            return $jsonResponse;
         } catch (\Illuminate\Validation\ValidationException $e) {
             error_log('=== assignPickupByMerchant: ValidationException ===');
             error_log('Errors: ' . print_r($e->errors(), true));
