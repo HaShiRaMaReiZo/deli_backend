@@ -292,20 +292,20 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
-        // STEP 1: TEST WITH HARDCODED RESPONSE
-        // Uncomment the block below to test if route/middleware works
+        // TEST: Return hardcoded response immediately to verify route works
+        // If this returns empty, the issue is in middleware/route
         // If this works, the issue is in the method logic below
-        // If this also returns empty, the issue is in middleware/route configuration
-        /*
-        \Illuminate\Support\Facades\Log::info('TEST: Hardcoded response test');
         return response()->json([
             'test' => true,
-            'message' => 'Hardcoded test response - if you see this, route works',
-            'merchant_id' => $merchantId,
+            'message' => 'Hardcoded test - route is working',
+            'merchant_id' => (int) $merchantId,
             'rider_id' => $request->rider_id ?? null,
+            'timestamp' => now()->toDateTimeString(),
         ], 200);
-        */
         
+        // Code below is unreachable but kept for reference
+        // Uncomment after hardcoded test works
+        /*
         try {
             // Force log to file AND error_log for Render visibility
             $debugMsg = "=== assignPickupByMerchant CALLED ===\n";
@@ -394,19 +394,15 @@ class PackageController extends Controller
                         'created_at' => now(),
                     ]);
 
-                    // Broadcast status change via WebSocket - TEMPORARILY DISABLED
-                    // Disabled to isolate the empty response issue
-                    // TODO: Re-enable after fixing response issue
-                    /*
-                    try {
-                        event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
-                    } catch (\Exception $eventException) {
-                        Log::warning('Failed to broadcast package status change event', [
-                            'package_id' => $package->id,
-                            'error' => $eventException->getMessage(),
-                        ]);
-                    }
-                    */
+                    // Broadcast status change via WebSocket - DISABLED FOR TESTING
+                    // try {
+                    //     event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
+                    // } catch (\Exception $eventException) {
+                    //     Log::warning('Failed to broadcast package status change event', [
+                    //         'package_id' => $package->id,
+                    //         'error' => $eventException->getMessage(),
+                    //     ]);
+                    // }
 
                     $assigned[] = $package->id;
                 }
@@ -507,6 +503,7 @@ class PackageController extends Controller
             error_log('Error Response Content: ' . $errorResponse->getContent());
             return $errorResponse;
         }
+        */
     }
 
     public function arrived(Request $request)
