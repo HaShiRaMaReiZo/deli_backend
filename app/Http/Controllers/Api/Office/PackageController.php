@@ -292,16 +292,21 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
-        // TEST: Return hardcoded response immediately to verify route works
-        // If this returns empty, the issue is in middleware/route
-        // If this works, the issue is in the method logic below
-        return response()->json([
-            'test' => true,
-            'message' => 'Hardcoded test - route is working',
-            'merchant_id' => (int) $merchantId,
-            'rider_id' => $request->rider_id ?? null,
-            'timestamp' => now()->toDateTimeString(),
-        ], 200);
+        // TEST: Check if method is even being called
+        // Write directly to error log to bypass Laravel logging
+        error_log("=== assignPickupByMerchant CALLED ===");
+        error_log("Merchant ID: " . $merchantId);
+        
+        // Try the simplest possible response
+        $data = ['test' => true, 'message' => 'Working', 'merchant_id' => (int)$merchantId];
+        
+        // Clear ALL output buffers
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+        
+        // Return using response()->json() - simplest method
+        return response()->json($data, 200);
         
         // Code below is unreachable but kept for reference
         // Uncomment after hardcoded test works
