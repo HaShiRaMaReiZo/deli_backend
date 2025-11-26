@@ -292,9 +292,12 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
-        // Write to log file immediately to verify method is called
-        $logFile = storage_path('logs/assign_pickup_debug.log');
-        file_put_contents($logFile, "=== METHOD CALLED ===\nTime: " . now()->toDateTimeString() . "\nMerchant ID: $merchantId\nRider ID: " . ($request->rider_id ?? 'null') . "\n\n", FILE_APPEND);
+        // Use error_log for Render visibility
+        error_log("=== assignPickupByMerchant METHOD CALLED ===");
+        error_log("Time: " . now()->toDateTimeString());
+        error_log("Merchant ID: $merchantId");
+        error_log("Rider ID: " . ($request->rider_id ?? 'null'));
+        error_log("User ID: " . ($request->user()->id ?? 'null'));
         
         try {
             Log::info('assignPickupByMerchant: Starting', [
@@ -303,7 +306,7 @@ class PackageController extends Controller
                 'user_id' => $request->user()->id,
             ]);
             
-            file_put_contents($logFile, "After Log::info call\n", FILE_APPEND);
+            error_log("assignPickupByMerchant: After Log::info call");
 
             $request->validate([
                 'rider_id' => 'required|exists:riders,id',
@@ -379,16 +382,18 @@ class PackageController extends Controller
                         'created_at' => now(),
                     ]);
 
-                    // Broadcast status change via WebSocket (wrap in try-catch to prevent breaking response)
+                    // Broadcast status change via WebSocket - DISABLED TEMPORARILY FOR DEBUGGING
+                    // Temporarily disabled to check if this is causing the empty response issue
+                    /*
                     try {
                         event(new PackageStatusChanged($package->id, 'assigned_to_rider', $package->merchant_id));
                     } catch (\Exception $eventException) {
-                        // Log but don't fail the assignment if event fails
                         Log::warning('Failed to broadcast package status change event', [
                             'package_id' => $package->id,
                             'error' => $eventException->getMessage(),
                         ]);
                     }
+                    */
 
                     $assigned[] = $package->id;
                 }
@@ -421,19 +426,16 @@ class PackageController extends Controller
                 'assigned_package_ids' => $assigned,
             ];
 
-            // Force write to log file directly
-            $logFile = storage_path('logs/assign_pickup_debug.log');
-            $logContent = "=== assignPickupByMerchant DEBUG START ===\n";
-            $logContent .= "Time: " . now()->toDateTimeString() . "\n";
-            $logContent .= "Response Data: " . json_encode($responseData, JSON_PRETTY_PRINT) . "\n";
-            $logContent .= "Assigned Count: " . count($assigned) . "\n";
-            $logContent .= "Assigned Package IDs: " . json_encode($assigned) . "\n";
+            // Log response data using error_log for Render visibility
+            error_log("=== assignPickupByMerchant: Building Response ===");
+            error_log("Assigned Count: " . count($assigned));
+            error_log("Assigned Package IDs: " . json_encode($assigned));
             
             // Try to encode JSON
             $jsonString = json_encode($responseData);
-            $logContent .= "JSON String: " . $jsonString . "\n";
-            $logContent .= "JSON String Length: " . strlen($jsonString) . "\n";
-            $logContent .= "JSON Encode Error: " . json_last_error_msg() . "\n";
+            error_log("JSON String: " . $jsonString);
+            error_log("JSON String Length: " . strlen($jsonString));
+            error_log("JSON Encode Error: " . json_last_error_msg());
             
             Log::info('assignPickupByMerchant: Sending success response', [
                 'assigned_count' => count($assigned),
@@ -442,31 +444,26 @@ class PackageController extends Controller
                 'json_length' => strlen($jsonString),
             ]);
 
-            // Create JSON response - use simple approach
-            $logContent .= "Creating JSON response...\n";
+            // Clear any output buffers that might interfere
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
             
-            // Write log before creating response
-            file_put_contents($logFile, $logContent, FILE_APPEND);
-            
-            // Return response directly without storing in variable
-            $logContent = "Returning response...\n";
-            $logContent .= "=== assignPickupByMerchant DEBUG END ===\n\n";
-            file_put_contents($logFile, $logContent, FILE_APPEND);
-            
-            // Create response and verify it
+            // Create JSON response
+            error_log("Creating JSON response object...");
             $response = response()->json($responseData, 200, [
                 'Content-Type' => 'application/json; charset=utf-8',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
                 'X-Content-Type-Options' => 'nosniff',
             ]);
             
+            // Verify response content
             $responseContent = $response->getContent();
-            $logContent = "Response created successfully\n";
-            $logContent .= "Response content: " . $responseContent . "\n";
-            $logContent .= "Response content length: " . strlen($responseContent) . "\n";
-            $logContent .= "Response status: " . $response->status() . "\n";
-            $logContent .= "=== assignPickupByMerchant DEBUG END ===\n\n";
-            file_put_contents($logFile, $logContent, FILE_APPEND);
+            error_log("Response created successfully");
+            error_log("Response content length: " . strlen($responseContent));
+            error_log("Response status: " . $response->status());
+            error_log("Response content (first 200 chars): " . substr($responseContent, 0, 200));
+            error_log("=== assignPickupByMerchant: Returning Response ===");
             
             return $response;
         } catch (\Illuminate\Validation\ValidationException $e) {
