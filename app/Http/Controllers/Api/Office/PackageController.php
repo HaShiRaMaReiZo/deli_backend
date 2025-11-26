@@ -292,21 +292,17 @@ class PackageController extends Controller
 
     public function assignPickupByMerchant(Request $request, $merchantId)
     {
-        // TEST: Check if method is even being called
-        // Write directly to error log to bypass Laravel logging
-        error_log("=== assignPickupByMerchant CALLED ===");
-        error_log("Merchant ID: " . $merchantId);
-        
-        // Try the simplest possible response
-        $data = ['test' => true, 'message' => 'Working', 'merchant_id' => (int)$merchantId];
-        
-        // Clear ALL output buffers
-        if (ob_get_level() > 0) {
-            ob_clean();
-        }
-        
-        // Return using response()->json() - simplest method
-        return response()->json($data, 200);
+        // TEST: Use echo to bypass Laravel response system completely
+        // This will tell us if the method is executing
+        header('Content-Type: application/json');
+        http_response_code(200);
+        echo json_encode([
+            'test' => true,
+            'message' => 'Direct echo test - if you see this, method executes',
+            'merchant_id' => (int) $merchantId,
+            'rider_id' => $request->rider_id ?? null,
+        ]);
+        exit; // Stop execution immediately
         
         // Code below is unreachable but kept for reference
         // Uncomment after hardcoded test works
