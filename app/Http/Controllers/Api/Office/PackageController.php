@@ -177,19 +177,12 @@ class PackageController extends Controller
             'assignment_type' => $assignmentType,
         ]);
 
-        // Create response first, then clean any accidental output
-        $jsonResponse = response()->json($responseData, 200, [
+        // Create and return JSON response
+        return response()->json($responseData, 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-cache, no-store, must-revalidate',
             'X-Content-Type-Options' => 'nosniff',
         ]);
-
-        // Clean output buffer without destroying Laravel's response buffer
-        if (ob_get_level() > 0) {
-            ob_clean();
-        }
-
-        return $jsonResponse;
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
@@ -305,11 +298,6 @@ class PackageController extends Controller
                 'rider_id' => $request->rider_id,
                 'user_id' => $request->user()->id,
             ]);
-
-            // Clear any previous output
-            if (ob_get_level()) {
-                ob_clean();
-            }
 
             $request->validate([
                 'rider_id' => 'required|exists:riders,id',
@@ -432,7 +420,7 @@ class PackageController extends Controller
                 'response_data' => $responseData,
             ]);
 
-            // Create JSON response BEFORE clearing buffers
+            // Create JSON response - don't clean buffers after creating response
             $jsonResponse = response()->json($responseData, 200, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
@@ -441,12 +429,8 @@ class PackageController extends Controller
 
             Log::info('assignPickupByMerchant: Response created', [
                 'response_size' => strlen(json_encode($responseData)),
+                'json_response' => json_encode($responseData),
             ]);
-
-            // Clear any accidental output, but don't destroy Laravel's response buffer
-            if (ob_get_level() > 0) {
-                ob_clean();
-            }
 
             return $jsonResponse;
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -460,11 +444,6 @@ class PackageController extends Controller
                 'error' => $e->getMessage(),
             ], 404)->header('Content-Type', 'application/json');
         } catch (\Exception $e) {
-            // Ensure no output before error response
-            if (ob_get_level()) {
-                ob_end_clean();
-            }
-            
             Log::error('Error assigning pickup by merchant', [
                 'merchant_id' => $merchantId,
                 'rider_id' => $request->rider_id ?? null,
