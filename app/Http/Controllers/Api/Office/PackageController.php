@@ -419,24 +419,21 @@ class PackageController extends Controller
             ]);
 
             // Create response - ensure it's properly formatted for Render
-            $response = response()->json($responseData, 200, [
+            // Use json_encode directly to ensure clean JSON output
+            $jsonContent = json_encode($responseData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            
+            Log::info('assignPickupByMerchant: Response JSON created', [
+                'json_length' => strlen($jsonContent),
+                'json_preview' => substr($jsonContent, 0, 200),
+            ]);
+            
+            // Return response with explicit content
+            return response($jsonContent, 200, [
                 'Content-Type' => 'application/json; charset=utf-8',
+                'Content-Length' => strlen($jsonContent),
                 'Cache-Control' => 'no-cache, no-store, must-revalidate',
                 'X-Content-Type-Options' => 'nosniff',
             ]);
-            
-            // Ensure response content exists
-            $content = $response->getContent();
-            if (empty($content)) {
-                Log::error('assignPickupByMerchant: Response content is empty!');
-                // Return fallback
-                return response()->json([
-                    'message' => 'Rider assigned successfully',
-                    'assigned_count' => count($assigned),
-                ], 200);
-            }
-            
-            return $response;
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
