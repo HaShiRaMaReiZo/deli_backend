@@ -70,20 +70,63 @@ class PackageController extends Controller
             $oldStatus = $package->status;
             $newStatus = $request->status;
 
-            // Update package status
-            $package->status = $newStatus;
-            $package->delivery_notes = $request->notes;
-            $package->save();
+            // Use database transaction to ensure atomicity
+            \Illuminate\Support\Facades\DB::transaction(function () use ($package, $newStatus, $request, $oldStatus) {
+                // Update package status using update() for explicit update
+                $updated = Package::where('id', $package->id)
+                    ->update([
+                        'status' => $newStatus,
+                        'delivery_notes' => $request->notes,
+                        'updated_at' => now(),
+                    ]);
+                
+                if ($updated === 0) {
+                    Log::error('Failed to update package status - no rows affected', [
+                        'package_id' => $package->id,
+                        'old_status' => $oldStatus,
+                        'new_status' => $newStatus,
+                    ]);
+                    throw new \Exception('Failed to update package status in database');
+                }
+                
+                Log::info('Package status updated in database', [
+                    'package_id' => $package->id,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus,
+                    'rows_affected' => $updated,
+                ]);
 
-            // Log status history
-            PackageStatusHistory::create([
-                'package_id' => $package->id,
-                'status' => $newStatus,
-                'changed_by_user_id' => $request->user()->id,
-                'changed_by_type' => 'office',
-                'notes' => $request->notes,
-                'created_at' => now(),
-            ]);
+                // Log status history
+                try {
+                    PackageStatusHistory::create([
+                        'package_id' => $package->id,
+                        'status' => $newStatus,
+                        'changed_by_user_id' => $request->user()->id,
+                        'changed_by_type' => 'office',
+                        'notes' => $request->notes,
+                        'created_at' => now(),
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to create status history', [
+                        'package_id' => $package->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Don't fail the whole operation if history creation fails
+                }
+            });
+            
+            // Refresh package to get updated data
+            $package->refresh();
+            
+            // Verify the status was actually updated
+            if ($package->status !== $newStatus) {
+                Log::error('Package status mismatch after update', [
+                    'package_id' => $package->id,
+                    'expected_status' => $newStatus,
+                    'actual_status' => $package->status,
+                ]);
+                throw new \Exception('Package status was not updated correctly');
+            }
 
             // Broadcast status change via WebSocket (wrap in try-catch to prevent breaking response)
             try {
