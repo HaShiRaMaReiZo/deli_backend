@@ -54,38 +54,101 @@ class PackageController extends Controller
 
     public function updateStatus(Request $request, $id)
     {
-        $request->validate([
-            'status' => 'required|in:arrived_at_office,assigned_to_rider,return_to_office,returned_to_merchant,cancelled',
-            'notes' => 'nullable|string',
-        ]);
+        try {
+            // Clear any output buffers to ensure clean JSON response
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            $request->validate([
+                'status' => 'required|in:arrived_at_office,assigned_to_rider,return_to_office,returned_to_merchant,cancelled',
+                'notes' => 'nullable|string',
+            ]);
 
-        $package = Package::findOrFail($id);
+            $package = Package::findOrFail($id);
 
-        $oldStatus = $package->status;
-        $newStatus = $request->status;
+            $oldStatus = $package->status;
+            $newStatus = $request->status;
 
-        // Update package status
-        $package->status = $newStatus;
-        $package->delivery_notes = $request->notes;
-        $package->save();
+            // Update package status
+            $package->status = $newStatus;
+            $package->delivery_notes = $request->notes;
+            $package->save();
 
-        // Log status history
-        PackageStatusHistory::create([
-            'package_id' => $package->id,
-            'status' => $newStatus,
-            'changed_by_user_id' => $request->user()->id,
-            'changed_by_type' => 'office',
-            'notes' => $request->notes,
-            'created_at' => now(),
-        ]);
+            // Log status history
+            PackageStatusHistory::create([
+                'package_id' => $package->id,
+                'status' => $newStatus,
+                'changed_by_user_id' => $request->user()->id,
+                'changed_by_type' => 'office',
+                'notes' => $request->notes,
+                'created_at' => now(),
+            ]);
 
-        // Broadcast status change via WebSocket
-        event(new PackageStatusChanged($package->id, $newStatus, $package->merchant_id));
+            // Broadcast status change via WebSocket (wrap in try-catch to prevent breaking response)
+            try {
+                event(new PackageStatusChanged($package->id, $newStatus, $package->merchant_id));
+            } catch (\Exception $e) {
+                Log::warning('Failed to broadcast package status change event', [
+                    'package_id' => $package->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
-        return response()->json([
-            'message' => 'Status updated successfully',
-            'package' => $package->load(['merchant', 'currentRider', 'statusHistory']),
-        ]);
+            // Load relationships safely
+            $package->load(['merchant:id,business_name', 'currentRider:id,name', 'statusHistory' => function($query) {
+                $query->orderBy('created_at', 'desc')->limit(5);
+            }]);
+
+            // Return clean JSON response
+            return response()->json([
+                'message' => 'Status updated successfully',
+                'package' => $package,
+            ], 200, [
+                'Content-Type' => 'application/json; charset=utf-8',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422, [
+                'Content-Type' => 'application/json; charset=utf-8',
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            return response()->json([
+                'message' => 'Package not found',
+                'error' => $e->getMessage(),
+            ], 404, [
+                'Content-Type' => 'application/json; charset=utf-8',
+            ]);
+        } catch (\Exception $e) {
+            // Clear output buffers on error
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            Log::error('Error updating package status', [
+                'package_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to update package status',
+                'error' => $e->getMessage(),
+            ], 500, [
+                'Content-Type' => 'application/json; charset=utf-8',
+            ]);
+        }
     }
 
     public function assign(Request $request, $id)

@@ -185,16 +185,29 @@
                 'Content-Type': 'application/json'
             }
         })
-        .then(res => {
+        .then(async res => {
             console.log('Response status:', res.status);
             if (!res.ok) {
                 // Log response text for debugging
-                return res.text().then(text => {
-                    console.error('Error response:', text);
-                    throw new Error(`HTTP error! status: ${res.status}, message: ${text}`);
-                });
+                const text = await res.text();
+                console.error('Error response:', text);
+                throw new Error(`HTTP error! status: ${res.status}, message: ${text || 'Unknown error'}`);
             }
-            return res.json();
+            
+            // Check if response has content
+            const text = await res.text();
+            if (!text || text.trim() === '') {
+                console.warn('Empty response received, using default data');
+                return { riders: [] };
+            }
+            
+            // Try to parse JSON
+            try {
+                return JSON.parse(text);
+            } catch (parseError) {
+                console.error('JSON parse error:', parseError, 'Response text:', text.substring(0, 200));
+                throw new Error('Invalid JSON response from server');
+            }
         })
         .then(data => {
             console.log('Rider locations data:', data);
@@ -204,7 +217,7 @@
         })
         .catch(err => {
             console.error('Error loading rider locations:', err);
-            document.getElementById('riderList').innerHTML = '<p class="text-red-500 text-center">Error loading riders: ' + err.message + '</p>';
+            document.getElementById('riderList').innerHTML = '<p class="text-red-500 text-center">Error loading riders: ' + (err.message || 'Unknown error') + '</p>';
         });
     }
 
