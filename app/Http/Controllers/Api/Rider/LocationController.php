@@ -7,6 +7,7 @@ use App\Models\Rider;
 use App\Models\RiderLocation;
 use App\Events\RiderLocationUpdated;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 
 class LocationController extends Controller
 {
@@ -76,6 +77,22 @@ class LocationController extends Controller
                 ]);
             }
 
+            // Send location update to Go WebSocket server (don't fail if this fails)
+            try {
+                $this->sendToGoServer(
+                    $rider->id,
+                    $request->latitude,
+                    $request->longitude,
+                    $request->package_id
+                );
+            } catch (\Exception $e) {
+                // Log but don't fail - Go server is optional
+                \Illuminate\Support\Facades\Log::warning('Failed to send location to Go server', [
+                    'rider_id' => $rider->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json([
                 'message' => 'Location updated successfully',
                 'location' => [
@@ -113,5 +130,36 @@ class LocationController extends Controller
                 'last_update' => $rider->last_location_update,
             ],
         ]);
+    }
+
+    /**
+     * Send location update to Go WebSocket server
+     */
+    private function sendToGoServer($riderId, $latitude, $longitude, $packageId = null)
+    {
+        $goServerUrl = config('services.go_websocket.url', env('GO_WEBSOCKET_URL', 'http://localhost:8080'));
+        
+        $data = [
+            'rider_id' => $riderId,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'last_update' => now()->toIso8601String(),
+        ];
+
+        if ($packageId) {
+            $data['package_id'] = $packageId;
+            
+            // Get package status to check if merchant should see location
+            $package = \App\Models\Package::find($packageId);
+            $packageStatus = $package ? $package->status : null;
+            
+            // Only send if status is on_the_way (Go server will also check, but this saves a query)
+            if ($packageStatus === 'on_the_way') {
+                Http::timeout(2)->post($goServerUrl . '/api/location/update?package_status=' . $packageStatus, $data);
+            }
+        } else {
+            // No package_id, just send to office channel
+            Http::timeout(2)->post($goServerUrl . '/api/location/update', $data);
+        }
     }
 }

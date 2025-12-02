@@ -243,7 +243,8 @@ class OfficeController extends Controller
     public function map()
     {
         $apiToken = $this->getApiToken();
-        return view('office.map', compact('apiToken'));
+        $user = auth()->user();
+        return view('office.map', compact('apiToken', 'user'));
     }
 
     public function showRegisterUser()

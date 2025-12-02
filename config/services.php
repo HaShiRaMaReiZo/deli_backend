@@ -40,4 +40,8 @@ return [
         'project_id' => env('FIREBASE_PROJECT_ID'),
     ],
 
+    'go_websocket' => [
+        'url' => env('GO_WEBSOCKET_URL', 'http://localhost:8080'),
+    ],
+
 ];

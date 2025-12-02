@@ -322,10 +322,10 @@ class PackageController extends Controller
             ]);
         }
 
-        // Only return live location if status is on_the_way
-        if ($package->status !== 'on_the_way') {
+        // Only return live location if status is ready_for_delivery or on_the_way (in transit)
+        if ($package->status !== 'on_the_way' && $package->status !== 'ready_for_delivery') {
             return response()->json([
-                'message' => 'Package is not on the way',
+                'message' => 'Package is not in transit',
                 'location' => null,
                 'package' => [
                     'id' => $package->id,

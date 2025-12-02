@@ -396,27 +396,99 @@
         initMap();
     }
     
-    // WebSocket: Listen for real-time rider location updates
-    if (window.WebSocketHelper && window.WebSocketHelper.isConnected()) {
-        // Use 'private-' prefix for private channels in Pusher
-        const riderLocationChannel = window.WebSocketHelper.connect('private-office.riders.locations', 'rider.location.updated', function(data) {
-            // Update rider location on map in real-time
-            updateRiderLocationOnMap(data);
-        });
+    // WebSocket: Connect to Go WebSocket server for real-time rider location updates
+    let goWebSocket = null;
+    let reconnectTimer = null;
+    
+    function connectGoWebSocket() {
+        // Get user info from the page (passed from backend)
+        const userId = {{ $user->id ?? 0 }};
+        const userRole = '{{ $user->role ?? "office_staff" }}';
         
-        // Clean up on page unload
-        window.addEventListener('beforeunload', () => {
-            if (riderLocationChannel) {
-                window.WebSocketHelper.disconnect(riderLocationChannel);
-            }
+        // Go WebSocket server URL
+        const wsUrl = 'wss://location-tracker-4omi.onrender.com/ws';
+        const queryParams = new URLSearchParams({
+            'user_id': userId.toString(),
+            'role': userRole
         });
+        const wsUri = `${wsUrl}?${queryParams.toString()}`;
+        
+        console.log('Connecting to Go WebSocket server:', wsUri);
+        
+        try {
+            goWebSocket = new WebSocket(wsUri);
+            
+            goWebSocket.onopen = function() {
+                console.log('Go WebSocket connected successfully');
+                // Clear any reconnect timer
+                if (reconnectTimer) {
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }
+            };
+            
+            goWebSocket.onmessage = function(event) {
+                try {
+                    const message = JSON.parse(event.data);
+                    console.log('WebSocket message received:', message);
+                    
+                    // Handle rider location updates
+                    if (message.event === 'rider.location.updated' && message.data) {
+                        updateRiderLocationOnMap(message.data);
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e, event.data);
+                }
+            };
+            
+            goWebSocket.onerror = function(error) {
+                console.error('Go WebSocket error:', error);
+            };
+            
+            goWebSocket.onclose = function() {
+                console.log('Go WebSocket closed. Attempting to reconnect...');
+                goWebSocket = null;
+                
+                // Reconnect after 5 seconds
+                reconnectTimer = setTimeout(() => {
+                    if (!goWebSocket) {
+                        connectGoWebSocket();
+                    }
+                }, 5000);
+            };
+        } catch (e) {
+            console.error('Failed to connect to Go WebSocket:', e);
+            // Retry after 5 seconds
+            reconnectTimer = setTimeout(() => {
+                connectGoWebSocket();
+            }, 5000);
+        }
     }
+    
+    // Connect to Go WebSocket server when page loads
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', connectGoWebSocket);
+    } else {
+        connectGoWebSocket();
+    }
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+        }
+        if (goWebSocket) {
+            goWebSocket.close();
+        }
+    });
     
     function updateRiderLocationOnMap(data) {
         if (!map || !data.latitude || !data.longitude) return;
         
         const riderId = data.rider_id;
         const position = [parseFloat(data.longitude), parseFloat(data.latitude)];
+        
+        console.log('Updating rider location:', riderId, position);
         
         // Update existing marker position smoothly
         if (markers[riderId]) {
