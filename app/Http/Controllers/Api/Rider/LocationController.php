@@ -133,11 +133,11 @@ class LocationController extends Controller
     }
 
     /**
-     * Send location update to Go WebSocket server
+     * Send location update to JavaScript Location Tracker server
      */
     private function sendToGoServer($riderId, $latitude, $longitude, $packageId = null)
     {
-        $goServerUrl = config('services.go_websocket.url', env('GO_WEBSOCKET_URL', 'http://localhost:8080'));
+        $trackerUrl = config('services.location_tracker.url', env('LOCATION_TRACKER_URL', 'http://localhost:3000'));
         
         $data = [
             'rider_id' => $riderId,
@@ -153,13 +153,18 @@ class LocationController extends Controller
             $package = \App\Models\Package::find($packageId);
             $packageStatus = $package ? $package->status : null;
             
-            // Only send if status is on_the_way (Go server will also check, but this saves a query)
-            if ($packageStatus === 'on_the_way') {
-                Http::timeout(2)->post($goServerUrl . '/api/location/update?package_status=' . $packageStatus, $data);
+            // Always send to tracker - it will handle broadcasting based on status
+            // If status is on_the_way, tracker will broadcast to merchant channel
+            // If status is not on_the_way, tracker will only broadcast to office channel
+            $url = $trackerUrl . '/api/location/update';
+            if ($packageStatus) {
+                $url .= '?package_status=' . urlencode($packageStatus);
             }
+            
+            Http::timeout(2)->post($url, $data);
         } else {
             // No package_id, just send to office channel
-            Http::timeout(2)->post($goServerUrl . '/api/location/update', $data);
+            Http::timeout(2)->post($trackerUrl . '/api/location/update', $data);
         }
     }
 }

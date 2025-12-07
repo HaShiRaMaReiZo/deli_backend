@@ -89,6 +89,7 @@
 
 @push('scripts')
 <script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 <script>
     let map;
     let markers = {};
@@ -396,96 +397,81 @@
         initMap();
     }
     
-    // WebSocket: Connect to Go WebSocket server for real-time rider location updates
-    let goWebSocket = null;
-    let reconnectTimer = null;
+    // Socket.io: Connect to JavaScript Location Tracker server for real-time rider location updates
+    let socket = null;
+    const LOCATION_TRACKER_URL = '{{ env("LOCATION_TRACKER_URL", "http://localhost:3000") }}';
     
-    function connectGoWebSocket() {
-        // Get user info from the page (passed from backend)
-        const userId = {{ $user->id ?? 0 }};
-        const userRole = '{{ $user->role ?? "office_staff" }}';
-        
-        // Go WebSocket server URL
-        const wsUrl = 'wss://location-tracker-4omi.onrender.com/ws';
-        const queryParams = new URLSearchParams({
-            'user_id': userId.toString(),
-            'role': userRole
-        });
-        const wsUri = `${wsUrl}?${queryParams.toString()}`;
-        
-        console.log('Connecting to Go WebSocket server:', wsUri);
+    function connectSocket() {
+        console.log('Connecting to Location Tracker server:', LOCATION_TRACKER_URL);
         
         try {
-            goWebSocket = new WebSocket(wsUri);
+            socket = io(LOCATION_TRACKER_URL, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                reconnectionAttempts: Infinity
+            });
             
-            goWebSocket.onopen = function() {
-                console.log('Go WebSocket connected successfully');
-                // Clear any reconnect timer
-                if (reconnectTimer) {
-                    clearTimeout(reconnectTimer);
-                    reconnectTimer = null;
-                }
-            };
-            
-            goWebSocket.onmessage = function(event) {
-                try {
-                    const message = JSON.parse(event.data);
-                    console.log('WebSocket message received:', message);
-                    
-                    // Handle rider location updates
-                    if (message.event === 'rider.location.updated' && message.data) {
-                        updateRiderLocationOnMap(message.data);
-                    }
-                } catch (e) {
-                    console.error('Error parsing WebSocket message:', e, event.data);
-                }
-            };
-            
-            goWebSocket.onerror = function(error) {
-                console.error('Go WebSocket error:', error);
-            };
-            
-            goWebSocket.onclose = function() {
-                console.log('Go WebSocket closed. Attempting to reconnect...');
-                goWebSocket = null;
+            socket.on('connect', () => {
+                console.log('Socket.io connected successfully');
                 
-                // Reconnect after 5 seconds
-                reconnectTimer = setTimeout(() => {
-                    if (!goWebSocket) {
-                        connectGoWebSocket();
-                    }
-                }, 5000);
-            };
+                // Join office room to receive all rider locations
+                socket.emit('join:office');
+            });
+            
+            socket.on('connected', (data) => {
+                console.log('Socket.io connection confirmed:', data);
+            });
+            
+            // Receive all current rider locations when joining
+            socket.on('location:all', (locations) => {
+                console.log('Received all rider locations:', locations);
+                locations.forEach(location => {
+                    updateRiderLocationOnMap(location);
+                });
+            });
+            
+            // Receive real-time location updates
+            socket.on('location:update', (data) => {
+                console.log('Location update received:', data);
+                updateRiderLocationOnMap(data);
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('Socket.io disconnected. Will reconnect automatically...');
+            });
+            
+            socket.on('error', (error) => {
+                console.error('Socket.io error:', error);
+            });
         } catch (e) {
-            console.error('Failed to connect to Go WebSocket:', e);
+            console.error('Failed to connect to Socket.io:', e);
             // Retry after 5 seconds
-            reconnectTimer = setTimeout(() => {
-                connectGoWebSocket();
+            setTimeout(() => {
+                connectSocket();
             }, 5000);
         }
     }
     
-    // Connect to Go WebSocket server when page loads
+    // Connect when page loads
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', connectGoWebSocket);
+        document.addEventListener('DOMContentLoaded', connectSocket);
     } else {
-        connectGoWebSocket();
+        connectSocket();
     }
     
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-        }
-        if (goWebSocket) {
-            goWebSocket.close();
+        if (socket) {
+            socket.disconnect();
         }
     });
     
     function updateRiderLocationOnMap(data) {
         if (!map || !data.latitude || !data.longitude) return;
         
-        const riderId = data.rider_id;
+        const riderId = data.rider_id || data.riderId;
         const position = [parseFloat(data.longitude), parseFloat(data.latitude)];
         
         console.log('Updating rider location:', riderId, position);
