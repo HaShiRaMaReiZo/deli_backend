@@ -133,38 +133,71 @@ class LocationController extends Controller
     }
 
     /**
-     * Send location update to JavaScript Location Tracker server
+     * Store location update from Node.js server (for database history)
+     * This endpoint is called by the Node.js location tracker server
+     * No authentication required - Node.js server is trusted
      */
-    private function sendToGoServer($riderId, $latitude, $longitude, $packageId = null)
+    public function store(Request $request)
     {
-        $trackerUrl = config('services.location_tracker.url', env('LOCATION_TRACKER_URL', 'http://localhost:3000'));
-        
-        $data = [
-            'rider_id' => $riderId,
-            'latitude' => $latitude,
-            'longitude' => $longitude,
-            'last_update' => now()->toIso8601String(),
-        ];
+        try {
+            $request->validate([
+                'rider_id' => 'required|exists:riders,id',
+                'latitude' => 'required|numeric',
+                'longitude' => 'required|numeric',
+                'package_id' => 'nullable|exists:packages,id',
+                'speed' => 'nullable|numeric',
+                'heading' => 'nullable|numeric',
+            ]);
 
-        if ($packageId) {
-            $data['package_id'] = $packageId;
+            $rider = Rider::findOrFail($request->rider_id);
+
+            // Update rider's current location
+            $rider->current_latitude = $request->latitude;
+            $rider->current_longitude = $request->longitude;
+            $rider->last_location_update = now();
             
-            // Get package status to check if merchant should see location
-            $package = \App\Models\Package::find($packageId);
-            $packageStatus = $package ? $package->status : null;
-            
-            // Always send to tracker - it will handle broadcasting based on status
-            // If status is on_the_way, tracker will broadcast to merchant channel
-            // If status is not on_the_way, tracker will only broadcast to office channel
-            $url = $trackerUrl . '/api/location/update';
-            if ($packageStatus) {
-                $url .= '?package_status=' . urlencode($packageStatus);
+            // Set rider status to 'available' if they're offline
+            if ($rider->status === 'offline') {
+                $rider->status = 'available';
             }
             
-            Http::timeout(2)->post($url, $data);
-        } else {
-            // No package_id, just send to office channel
-            Http::timeout(2)->post($trackerUrl . '/api/location/update', $data);
+            $rider->save();
+
+            // Store location history (optional, don't fail if this fails)
+            try {
+                RiderLocation::create([
+                    'rider_id' => $rider->id,
+                    'package_id' => $request->package_id,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'speed' => $request->speed,
+                    'heading' => $request->heading,
+                    'created_at' => now(),
+                ]);
+            } catch (\Exception $e) {
+                // Log but don't fail - location history is optional
+                \Illuminate\Support\Facades\Log::warning('Failed to save location history', [
+                    'rider_id' => $rider->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Location stored successfully',
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Location store failed', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to store location',
+            ], 500);
         }
     }
 }

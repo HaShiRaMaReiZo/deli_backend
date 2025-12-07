@@ -59,6 +59,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // Location routes
         Route::post('/location', [RiderLocationController::class, 'update']);
         Route::get('/location', [RiderLocationController::class, 'current']);
+        
+        // Location store route (called by Node.js server, no auth required)
+        Route::post('/location/store', [RiderLocationController::class, 'store'])->withoutMiddleware(['auth:sanctum']);
     });
 
     // Office routes
