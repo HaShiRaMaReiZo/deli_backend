@@ -12,8 +12,8 @@
                 <i class="fas fa-sync-alt mr-1"></i> Refresh
             </button>
             <label class="flex items-center space-x-2">
-                <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
-                <span class="text-sm text-gray-700">Auto-refresh (30s)</span>
+                <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()" checked>
+                <span class="text-sm text-gray-700">Auto-refresh (1s)</span>
             </label>
         </div>
         <div class="text-sm text-gray-600">
@@ -374,7 +374,7 @@
     function toggleAutoRefresh() {
         const checkbox = document.getElementById('autoRefresh');
         if (checkbox.checked) {
-            autoRefreshInterval = setInterval(loadRiderLocations, 30000); // 30 seconds
+            autoRefreshInterval = setInterval(loadRiderLocations, 1000); // 1 second
         } else {
             if (autoRefreshInterval) {
                 clearInterval(autoRefreshInterval);
@@ -395,6 +395,23 @@
         document.addEventListener('DOMContentLoaded', initMap);
     } else {
         initMap();
+    }
+    
+    // Start auto-refresh by default (1s interval)
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            const checkbox = document.getElementById('autoRefresh');
+            if (checkbox) {
+                checkbox.checked = true;
+                toggleAutoRefresh();
+            }
+        });
+    } else {
+        const checkbox = document.getElementById('autoRefresh');
+        if (checkbox) {
+            checkbox.checked = true;
+            toggleAutoRefresh();
+        }
     }
     
     // Socket.io: Connect to JavaScript Location Tracker server for real-time rider location updates
