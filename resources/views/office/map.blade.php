@@ -12,8 +12,8 @@
                 <i class="fas fa-sync-alt mr-1"></i> Refresh
             </button>
             <label class="flex items-center space-x-2">
-                <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()" checked>
-                <span class="text-sm text-gray-700">Auto-refresh (1s)</span>
+                <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+                <span class="text-sm text-gray-700">Manual refresh (30s)</span>
             </label>
         </div>
         <div class="text-sm text-gray-600">
@@ -94,6 +94,7 @@
     let map;
     let markers = {};
     let autoRefreshInterval = null;
+    let isInitialLoad = true; // Track if this is the first load
     const API_BASE = '/api/office';
     const TOKEN = '{{ $apiToken }}';
 
@@ -212,9 +213,23 @@
         })
         .then(data => {
             console.log('Rider locations data:', data);
-            updateRiderList(data.riders || []);
-            updateMapMarkers(data.riders || []);
-            document.getElementById('riderCount').textContent = (data.riders || []).length;
+            const riders = data.riders || [];
+            
+            // Cache rider data for Socket.io updates
+            riders.forEach(rider => {
+                if (rider.rider_id) {
+                    riderDataCache[rider.rider_id] = {
+                        name: rider.name,
+                        phone: rider.phone,
+                        status: rider.status,
+                        package_count: rider.package_count || 0
+                    };
+                }
+            });
+            
+            updateRiderList(riders);
+            updateMapMarkers(riders);
+            document.getElementById('riderCount').textContent = riders.length;
         })
         .catch(err => {
             console.error('Error loading rider locations:', err);
@@ -301,8 +316,9 @@
             markers[rider.rider_id] = marker;
         });
 
-        // Fit map to show all riders
-        if (bounds.length > 0) {
+        // Only fit map to show all riders on initial load
+        // After that, preserve user's zoom/pan position
+        if (isInitialLoad && bounds.length > 0) {
             if (bounds.length === 1) {
                 // Single rider - just center on it
                 map.setCenter(bounds[0]);
@@ -322,6 +338,7 @@
                     maxZoom: 22 // Clamp to max zoom
                 });
             }
+            isInitialLoad = false; // Mark that initial load is complete
         }
     }
 
@@ -374,7 +391,7 @@
     function toggleAutoRefresh() {
         const checkbox = document.getElementById('autoRefresh');
         if (checkbox.checked) {
-            autoRefreshInterval = setInterval(loadRiderLocations, 1000); // 1 second
+            autoRefreshInterval = setInterval(loadRiderLocations, 30000); // 30 seconds (only for manual refresh)
         } else {
             if (autoRefreshInterval) {
                 clearInterval(autoRefreshInterval);
@@ -397,22 +414,8 @@
         initMap();
     }
     
-    // Start auto-refresh by default (1s interval)
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            const checkbox = document.getElementById('autoRefresh');
-            if (checkbox) {
-                checkbox.checked = true;
-                toggleAutoRefresh();
-            }
-        });
-    } else {
-        const checkbox = document.getElementById('autoRefresh');
-        if (checkbox) {
-            checkbox.checked = true;
-            toggleAutoRefresh();
-        }
-    }
+    // Don't auto-refresh by default - use Socket.io for real-time updates instead
+    // Auto-refresh checkbox is now optional for manual periodic refresh only
     
     // Socket.io: Connect to JavaScript Location Tracker server for real-time rider location updates
     let socket = null;
@@ -444,6 +447,7 @@
             // Receive all current rider locations when joining
             socket.on('location:all', (locations) => {
                 console.log('Received all rider locations:', locations);
+                // Only update markers, don't reset map view
                 locations.forEach(location => {
                     updateRiderLocationOnMap(location);
                 });
@@ -485,6 +489,9 @@
         }
     });
     
+    // Store rider data for creating markers
+    let riderDataCache = {};
+    
     function updateRiderLocationOnMap(data) {
         if (!map || !data.latitude || !data.longitude) return;
         
@@ -493,14 +500,92 @@
         
         console.log('Updating rider location:', riderId, position);
         
-        // Update existing marker position smoothly
+        // Update existing marker position smoothly (without resetting map view)
         if (markers[riderId]) {
-            // Smoothly animate marker to new position
+            // Smoothly update marker position without affecting map zoom/pan
             markers[riderId].setLngLat(position);
+            
+            // Update popup with latest timestamp if available
+            if (data.timestamp || data.last_update) {
+                const timestamp = data.timestamp || data.last_update;
+                const popupContent = `
+                    <div style="padding: 5px;">
+                        <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${riderDataCache[riderId]?.name || 'Rider ' + riderId}</h3>
+                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${riderDataCache[riderId]?.phone || 'N/A'}</p>
+                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${riderDataCache[riderId]?.status || 'active'}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${riderDataCache[riderId]?.package_count || 0}</span></p>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Last update: ${new Date(timestamp).toLocaleString()}</p>
+                    </div>
+                `;
+                const popup = new maplibregl.Popup({ offset: 25 })
+                    .setHTML(popupContent);
+                markers[riderId].setPopup(popup);
+            }
         } else {
-            // Marker doesn't exist yet - reload all locations to get full rider data
-            // This will create the marker with proper name and details
-            loadRiderLocations();
+            // Marker doesn't exist yet - create it without reloading the entire map
+            // Use cached rider data or create a basic marker
+            const riderName = riderDataCache[riderId]?.name || `Rider ${riderId}`;
+            const riderPhone = riderDataCache[riderId]?.phone || 'N/A';
+            const riderStatus = riderDataCache[riderId]?.status || 'active';
+            const packageCount = riderDataCache[riderId]?.package_count || 0;
+            
+            // Create marker element
+            const el = document.createElement('div');
+            el.style.display = 'flex';
+            el.style.flexDirection = 'column';
+            el.style.alignItems = 'center';
+            el.style.cursor = 'pointer';
+            
+            const markerDot = document.createElement('div');
+            markerDot.className = 'rider-marker';
+            markerDot.style.width = '20px';
+            markerDot.style.height = '20px';
+            markerDot.style.borderRadius = '50%';
+            markerDot.style.backgroundColor = '#ef4444';
+            markerDot.style.border = '3px solid white';
+            markerDot.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+            
+            const nameLabel = document.createElement('div');
+            nameLabel.textContent = riderName;
+            nameLabel.style.marginTop = '4px';
+            nameLabel.style.padding = '2px 6px';
+            nameLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            nameLabel.style.color = 'white';
+            nameLabel.style.fontSize = '11px';
+            nameLabel.style.fontWeight = '600';
+            nameLabel.style.borderRadius = '4px';
+            nameLabel.style.whiteSpace = 'nowrap';
+            nameLabel.style.textAlign = 'center';
+            nameLabel.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
+            
+            el.appendChild(markerDot);
+            el.appendChild(nameLabel);
+            
+            // Create marker
+            const marker = new maplibregl.Marker({
+                element: el,
+                anchor: 'bottom'
+            })
+            .setLngLat(position)
+            .addTo(map);
+            
+            // Create popup
+            const timestamp = data.timestamp || data.last_update || new Date().toISOString();
+            const popupContent = `
+                <div style="padding: 5px;">
+                    <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${riderName}</h3>
+                    <p style="margin: 3px 0; font-size: 14px; color: #666;">${riderPhone}</p>
+                    <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${riderStatus}</span></p>
+                    <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${packageCount}</span></p>
+                    <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Last update: ${new Date(timestamp).toLocaleString()}</p>
+                </div>
+            `;
+            
+            const popup = new maplibregl.Popup({ offset: 25 })
+                .setHTML(popupContent);
+            
+            marker.setPopup(popup);
+            markers[riderId] = marker;
         }
     }
 </script>
