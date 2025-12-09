@@ -215,15 +215,18 @@
             console.log('Rider locations data:', data);
             const riders = data.riders || [];
             
-            // Cache rider data for Socket.io updates
+            // Cache rider data for Socket.io updates (normalize to number keys)
             riders.forEach(rider => {
                 if (rider.rider_id) {
-                    riderDataCache[rider.rider_id] = {
+                    const riderIdNum = Number(rider.rider_id);
+                    riderDataCache[riderIdNum] = {
                         name: rider.name,
                         phone: rider.phone,
                         status: rider.status,
                         package_count: rider.package_count || 0
                     };
+                    // Also cache with string key for compatibility
+                    riderDataCache[String(rider.rider_id)] = riderDataCache[riderIdNum];
                 }
             });
             
@@ -313,7 +316,9 @@
 
             marker.setPopup(popup);
 
-            markers[rider.rider_id] = marker;
+            // Store marker with normalized number key
+            const riderIdNum = Number(rider.rider_id);
+            markers[riderIdNum] = marker;
         });
 
         // Only fit map to show all riders on initial load
@@ -496,38 +501,104 @@
         if (!map || !data.latitude || !data.longitude) return;
         
         const riderId = data.rider_id || data.riderId;
+        if (!riderId) {
+            console.warn('updateRiderLocationOnMap: No rider_id in data', data);
+            return;
+        }
+        
         const position = [parseFloat(data.longitude), parseFloat(data.latitude)];
         
         console.log('Updating rider location:', riderId, position);
         
         // Update existing marker position smoothly (without resetting map view)
-        if (markers[riderId]) {
+        // Normalize riderId to number for consistent key lookup
+        const riderIdNum = Number(riderId);
+        const riderIdStr = String(riderId);
+        
+        // Check both string and number keys (API might return string, Socket.io might return number)
+        const existingMarker = markers[riderIdNum] || markers[riderIdStr] || markers[riderId];
+        
+        if (existingMarker) {
+            // Normalize the key to ensure consistency (use number as standard)
+            if (!markers[riderIdNum]) {
+                markers[riderIdNum] = existingMarker;
+                // Clean up old keys if different
+                if (markers[riderIdStr] && riderIdStr != String(riderIdNum)) {
+                    delete markers[riderIdStr];
+                }
+                if (markers[riderId] && riderId != riderIdNum) {
+                    delete markers[riderId];
+                }
+            }
+            
             // Smoothly update marker position without affecting map zoom/pan
-            markers[riderId].setLngLat(position);
+            existingMarker.setLngLat(position);
+            
+            // Update marker label if we have cached rider data
+            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId] || {};
+            const riderName = cachedData.name || `Rider ${riderIdNum}`;
+            const markerElement = existingMarker.getElement();
+            const nameLabel = markerElement.querySelector('div:last-child');
+            if (nameLabel && nameLabel.textContent !== riderName) {
+                nameLabel.textContent = riderName;
+            }
             
             // Update popup with latest timestamp if available
             if (data.timestamp || data.last_update) {
                 const timestamp = data.timestamp || data.last_update;
                 const popupContent = `
                     <div style="padding: 5px;">
-                        <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${riderDataCache[riderId]?.name || 'Rider ' + riderId}</h3>
-                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${riderDataCache[riderId]?.phone || 'N/A'}</p>
-                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${riderDataCache[riderId]?.status || 'active'}</span></p>
-                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${riderDataCache[riderId]?.package_count || 0}</span></p>
+                        <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${riderName}</h3>
+                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${cachedData.phone || 'N/A'}</p>
+                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${cachedData.status || 'active'}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${cachedData.package_count || 0}</span></p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Last update: ${new Date(timestamp).toLocaleString()}</p>
                     </div>
                 `;
                 const popup = new maplibregl.Popup({ offset: 25 })
                     .setHTML(popupContent);
-                markers[riderId].setPopup(popup);
+                existingMarker.setPopup(popup);
             }
         } else {
+            // Marker doesn't exist yet - but check if we should update existing instead of creating duplicate
+            // This handles cases where rider_id format differs (string vs number)
+            console.log('Marker not found for rider_id:', riderId, 'Available markers:', Object.keys(markers));
+            
+            // Check if there's a marker with the same rider but different key format
+            // Try to find by matching cached rider names
+            const riderIdNum = Number(riderId);
+            const riderIdStr = String(riderId);
+            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId];
+            
+            let foundExisting = false;
+            if (cachedData && cachedData.name) {
+                // Search for existing marker by checking all markers and their cached data
+                for (const [key, marker] of Object.entries(markers)) {
+                    const keyData = riderDataCache[Number(key)] || riderDataCache[String(key)] || riderDataCache[key];
+                    if (keyData && keyData.name === cachedData.name) {
+                        console.log('Found existing marker with different key:', key, 'updating instead of creating new');
+                        // Normalize to number key
+                        markers[riderIdNum] = marker;
+                        if (key != riderIdNum) {
+                            delete markers[key];
+                        }
+                        marker.setLngLat(position);
+                        foundExisting = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (foundExisting) {
+                return; // Already updated, don't create duplicate
+            }
+            
             // Marker doesn't exist yet - create it without reloading the entire map
             // Use cached rider data or create a basic marker
-            const riderName = riderDataCache[riderId]?.name || `Rider ${riderId}`;
-            const riderPhone = riderDataCache[riderId]?.phone || 'N/A';
-            const riderStatus = riderDataCache[riderId]?.status || 'active';
-            const packageCount = riderDataCache[riderId]?.package_count || 0;
+            const riderName = cachedData?.name || `Rider ${riderIdNum}`;
+            const riderPhone = cachedData?.phone || 'N/A';
+            const riderStatus = cachedData?.status || 'active';
+            const packageCount = cachedData?.package_count || 0;
             
             // Create marker element
             const el = document.createElement('div');
@@ -585,7 +656,17 @@
                 .setHTML(popupContent);
             
             marker.setPopup(popup);
-            markers[riderId] = marker;
+            // Store marker with normalized number key
+            markers[riderIdNum] = marker;
+            // Also cache rider data with number key if not already cached
+            if (!riderDataCache[riderIdNum]) {
+                riderDataCache[riderIdNum] = {
+                    name: riderName,
+                    phone: riderPhone,
+                    status: riderStatus,
+                    package_count: packageCount
+                };
+            }
         }
     }
 </script>
