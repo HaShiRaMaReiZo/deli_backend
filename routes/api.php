@@ -13,6 +13,9 @@ use App\Http\Controllers\Api\NotificationController;
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 
+// Location store route (called by Node.js server, no auth required)
+Route::post('/rider/location/store', [RiderLocationController::class, 'store']);
+
     // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Auth routes
@@ -59,9 +62,6 @@ Route::middleware('auth:sanctum')->group(function () {
         // Location routes
         Route::post('/location', [RiderLocationController::class, 'update']);
         Route::get('/location', [RiderLocationController::class, 'current']);
-        
-        // Location store route (called by Node.js server, no auth required)
-        Route::post('/location/store', [RiderLocationController::class, 'store'])->withoutMiddleware(['auth:sanctum']);
     });
 
     // Office routes
