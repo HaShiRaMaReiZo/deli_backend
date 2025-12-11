@@ -241,9 +241,17 @@
     }
 
     function updateMapMarkers(riders) {
-        // Clear existing markers
-        Object.values(markers).forEach(marker => marker.remove());
-        markers = {};
+        // Instead of clearing all markers, update existing ones and remove only those not in the new data
+        const newRiderIds = new Set(riders.map(r => Number(r.rider_id))); // Normalize to numbers
+        
+        // Remove markers for riders that are no longer in the list
+        Object.keys(markers).forEach(key => {
+            const riderId = Number(key);
+            if (!newRiderIds.has(riderId)) {
+                markers[key].remove();
+                delete markers[key];
+            }
+        });
 
         if (riders.length === 0) {
             return;
@@ -257,6 +265,52 @@
 
             const position = [parseFloat(rider.longitude), parseFloat(rider.latitude)]; // [lng, lat] for MapLibre
             bounds.push(position);
+            
+            // Normalize rider_id to number for consistent key lookup
+            const riderIdNum = Number(rider.rider_id);
+            const riderIdStr = String(rider.rider_id);
+            
+            // Check if marker already exists (from Socket.io update or previous API call)
+            const existingMarker = markers[riderIdNum] || markers[riderIdStr] || markers[rider.rider_id];
+            
+            if (existingMarker) {
+                // Update existing marker position and popup instead of creating duplicate
+                existingMarker.setLngLat(position);
+                
+                // Update popup content
+                const popupContent = `
+                    <div style="padding: 5px;">
+                        <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${rider.name}</h3>
+                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${rider.phone}</p>
+                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${rider.status}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${rider.package_count || 0}</span></p>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Last update: ${rider.last_location_update ? new Date(rider.last_location_update).toLocaleString() : 'N/A'}</p>
+                    </div>
+                `;
+                const popup = new maplibregl.Popup({ offset: 25 }).setHTML(popupContent);
+                existingMarker.setPopup(popup);
+                
+                // Update marker label
+                const markerElement = existingMarker.getElement();
+                const nameLabel = markerElement.querySelector('div:last-child');
+                if (nameLabel && nameLabel.textContent !== rider.name) {
+                    nameLabel.textContent = rider.name;
+                }
+                
+                // Normalize key to number
+                if (!markers[riderIdNum]) {
+                    markers[riderIdNum] = existingMarker;
+                    // Clean up old keys
+                    if (markers[riderIdStr] && riderIdStr != String(riderIdNum)) {
+                        delete markers[riderIdStr];
+                    }
+                    if (markers[rider.rider_id] && rider.rider_id != riderIdNum) {
+                        delete markers[rider.rider_id];
+                    }
+                }
+                
+                return; // Skip creating new marker
+            }
 
             // Create a custom HTML element for the marker with rider name
             const el = document.createElement('div');
@@ -500,9 +554,22 @@
     function updateRiderLocationOnMap(data) {
         if (!map || !data.latitude || !data.longitude) return;
         
+        // IMPORTANT: Only use rider_id, not user_id
+        // The rider app now sends rider_id (from riders table), not user_id (from users table)
         const riderId = data.rider_id || data.riderId;
         if (!riderId) {
             console.warn('updateRiderLocationOnMap: No rider_id in data', data);
+            return;
+        }
+        
+        // Safety check: If rider_id looks like a user_id (e.g., 10) but we have cached data for a different rider_id (e.g., 2),
+        // it means we're receiving wrong data - skip it
+        const riderIdNum = Number(riderId);
+        const cachedData = riderDataCache[riderIdNum] || riderDataCache[String(riderId)];
+        if (!cachedData) {
+            // No cached data means this rider_id hasn't been loaded from API yet
+            // This could be old data with wrong rider_id - skip it to prevent duplicates
+            console.warn('updateRiderLocationOnMap: No cached data for rider_id:', riderIdNum, '- skipping to prevent duplicate markers');
             return;
         }
         
@@ -594,11 +661,18 @@
             }
             
             // Marker doesn't exist yet - create it without reloading the entire map
-            // Use cached rider data or create a basic marker
-            const riderName = cachedData?.name || `Rider ${riderIdNum}`;
-            const riderPhone = cachedData?.phone || 'N/A';
-            const riderStatus = cachedData?.status || 'active';
-            const packageCount = cachedData?.package_count || 0;
+            // IMPORTANT: Only create marker if we have cached rider data (from API)
+            // This prevents creating markers with wrong rider_id (e.g., user_id instead of rider_id)
+            if (!cachedData || !cachedData.name) {
+                console.warn('Cannot create marker for rider_id:', riderIdNum, '- no cached rider data. Waiting for API load...');
+                return; // Don't create marker without proper rider data
+            }
+            
+            // Use cached rider data
+            const riderName = cachedData.name;
+            const riderPhone = cachedData.phone || 'N/A';
+            const riderStatus = cachedData.status || 'active';
+            const packageCount = cachedData.package_count || 0;
             
             // Create marker element
             const el = document.createElement('div');
