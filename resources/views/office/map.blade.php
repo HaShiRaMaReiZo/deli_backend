@@ -1,7 +1,7 @@
 @extends('layouts.office')
 
 @section('title', 'Live Map')
-@section('page-title', 'Live Rider Map')
+@section('page-title',   'Live Rider Map')
 
 @section('content')
 <div class="space-y-6">
@@ -91,6 +91,8 @@
 <script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
 <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 <script>
+    // Debug: Log script execution
+    console.log('Map script loaded at:', new Date().toISOString());
     let map;
     let markers = {};
     let autoRefreshInterval = null;
@@ -100,6 +102,13 @@
 
     function initMap() {
         try {
+            // Check if map container exists
+            const mapContainer = document.getElementById('map');
+            if (!mapContainer) {
+                console.error('Map container element not found');
+                return;
+            }
+            
             // Default center - Yangon, Myanmar
             const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
             
@@ -112,6 +121,8 @@
                 }
                 return;
             }
+            
+            console.log('Initializing map...');
             
             map = new maplibregl.Map({
                 container: 'map',
@@ -126,66 +137,73 @@
                 preserveDrawingBuffer: false,
                 fadeDuration: 0
             });
+
+            // Add navigation controls
+            map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+            // Prevent zooming beyond limits to avoid white screen
+            const minZoom = 0;
+            const maxZoom = 22; // MapTiler supports up to zoom 22
+            
+            // Clamp zoom level when zoom ends to prevent white screen
+            map.on('zoomend', function() {
+                const currentZoom = map.getZoom();
+                
+                // Clamp zoom level if it exceeds limits
+                if (currentZoom < minZoom) {
+                    map.setZoom(minZoom);
+                } else if (currentZoom > maxZoom) {
+                    map.setZoom(maxZoom);
+                }
+            });
+            
+            // Also clamp during zoom to prevent going beyond limits
+            map.on('zoom', function() {
+                const currentZoom = map.getZoom();
+                
+                // Clamp zoom level if it exceeds limits
+                if (currentZoom < minZoom) {
+                    map.setZoom(minZoom);
+                } else if (currentZoom > maxZoom) {
+                    map.setZoom(maxZoom);
+                }
+            });
+
+            // Wait for map to load before adding markers
+            map.on('load', function() {
+                console.log('Map loaded successfully');
+                // Hide loading indicator
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.style.display = 'none';
+                }
+                // Load rider locations after map is ready
+                setTimeout(() => {
+                    loadRiderLocations();
+                }, 100); // Small delay to ensure map is fully rendered
+            });
+            
+            // Handle map errors
+            map.on('error', function(e) {
+                console.error('Map error:', e);
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map. Please refresh the page.</p></div>';
+                }
+            });
+            
+            // Handle style loading errors
+            map.on('style.load', function() {
+                console.log('Map style loaded');
+            });
+            
         } catch (error) {
             console.error('Error initializing map:', error);
             const loadingIndicator = document.getElementById('mapLoading');
             if (loadingIndicator) {
-                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error initializing map: ' + error.message + '</p></div>';
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error initializing map: ' + error.message + '</p><button onclick="initMap()" style="margin-top: 10px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button></div>';
             }
         }
-
-        // Add navigation controls
-        map.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-        // Prevent zooming beyond limits to avoid white screen
-        const minZoom = 0;
-        const maxZoom = 22; // MapTiler supports up to zoom 22
-        
-        // Clamp zoom level when zoom ends to prevent white screen
-        map.on('zoomend', function() {
-            const currentZoom = map.getZoom();
-            
-            // Clamp zoom level if it exceeds limits
-            if (currentZoom < minZoom) {
-                map.setZoom(minZoom);
-            } else if (currentZoom > maxZoom) {
-                map.setZoom(maxZoom);
-            }
-        });
-        
-        // Also clamp during zoom to prevent going beyond limits
-        map.on('zoom', function() {
-            const currentZoom = map.getZoom();
-            
-            // Clamp zoom level if it exceeds limits
-            if (currentZoom < minZoom) {
-                map.setZoom(minZoom);
-            } else if (currentZoom > maxZoom) {
-                map.setZoom(maxZoom);
-            }
-        });
-
-        // Wait for map to load before adding markers
-        map.on('load', function() {
-            // Hide loading indicator
-            const loadingIndicator = document.getElementById('mapLoading');
-            if (loadingIndicator) {
-                loadingIndicator.style.display = 'none';
-            }
-            // Load rider locations after map is ready
-            setTimeout(() => {
-                loadRiderLocations();
-            }, 100); // Small delay to ensure map is fully rendered
-        });
-        
-        // Handle map errors
-        map.on('error', function(e) {
-            console.error('Map error:', e);
-            const loadingIndicator = document.getElementById('mapLoading');
-            if (loadingIndicator) {
-                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map. Please refresh the page.</p></div>';
-            }
-        });
     }
 
     function loadRiderLocations() {
@@ -411,8 +429,7 @@
 
             marker.setPopup(popup);
 
-            // Store marker with normalized number key
-            const riderIdNum = Number(rider.rider_id);
+            // Store marker with normalized number key (riderIdNum already declared above)
             markers[riderIdNum] = marker;
         });
 
@@ -508,10 +525,36 @@
     });
 
     // Initialize map when page loads
+    // Wait for both DOM and MapLibre library to be ready
+    let mapLibreWaitAttempts = 0;
+    const MAX_WAIT_ATTEMPTS = 50; // 5 seconds max wait
+    
+    function waitForMapLibreAndInit() {
+        if (typeof maplibregl !== 'undefined') {
+            console.log('MapLibre GL is loaded, initializing map...');
+            initMap();
+        } else {
+            mapLibreWaitAttempts++;
+            if (mapLibreWaitAttempts >= MAX_WAIT_ATTEMPTS) {
+                console.error('MapLibre GL failed to load after waiting');
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library failed to load. Please check your internet connection and refresh the page.</p><button onclick="location.reload()" style="margin-top: 10px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Refresh Page</button></div>';
+                }
+                return;
+            }
+            setTimeout(waitForMapLibreAndInit, 100);
+        }
+    }
+    
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initMap);
+        document.addEventListener('DOMContentLoaded', function() {
+            // Wait a bit for scripts to load
+            setTimeout(waitForMapLibreAndInit, 100);
+        });
     } else {
-        initMap();
+        // DOM already loaded, wait for MapLibre
+        setTimeout(waitForMapLibreAndInit, 100);
     }
     
     // Don't auto-refresh by default - use Socket.io for real-time updates instead
@@ -663,7 +706,7 @@
             existingMarker.setLngLat(position);
             
             // Update marker label if we have cached rider data
-            const riderName = cachedRiderData.name || `Rider ${riderIdNum}`;
+            const riderName = cachedData.name || `Rider ${riderIdNum}`;
             const markerElement = existingMarker.getElement();
             const nameLabel = markerElement.querySelector('div:last-child');
             if (nameLabel && nameLabel.textContent !== riderName) {
@@ -676,9 +719,9 @@
                 const popupContent = `
                     <div style="padding: 5px;">
                         <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${riderName}</h3>
-                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${cachedRiderData.phone || 'N/A'}</p>
-                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${cachedRiderData.status || 'active'}</span></p>
-                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${cachedRiderData.package_count || 0}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${cachedData.phone || 'N/A'}</p>
+                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${cachedData.status || 'active'}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${cachedData.package_count || 0}</span></p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Last update: ${new Date(timestamp).toLocaleString()}</p>
                     </div>
                 `;
@@ -693,8 +736,7 @@
             
             // Check if there's a marker with the same rider but different key format
             // Try to find by matching cached rider names
-            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr];
-            
+            // Note: cachedData already declared above, reuse it
             let foundExisting = false;
             if (cachedData && cachedData.name) {
                 // Search for existing marker by checking all markers and their cached data
