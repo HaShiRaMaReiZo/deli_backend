@@ -88,143 +88,33 @@
 @endpush
 
 @push('scripts')
+<script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
 <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 <script>
-    // ============================================
-    // CACHE BUSTER - Version: 2025-12-11-v3
-    // If you see JavaScript errors, do a HARD REFRESH:
-    // Windows: Ctrl+Shift+R or Ctrl+F5
-    // Mac: Cmd+Shift+R
-    // ============================================
     let map;
     let markers = {};
     let autoRefreshInterval = null;
     let isInitialLoad = true; // Track if this is the first load
     const API_BASE = '/api/office';
-    const TOKEN = '{{ $apiToken ?? '' }}';
-
-    // Load MapLibre GL library dynamically and wait for it
-    function loadMapLibre(callback) {
-        if (typeof maplibregl !== 'undefined') {
-            // Already loaded
-            callback();
-            return;
-        }
-        
-        // Check if script is already being loaded
-        if (document.querySelector('script[src*="maplibre-gl"]')) {
-            // Wait for it to load
-            const checkInterval = setInterval(() => {
-                if (typeof maplibregl !== 'undefined') {
-                    clearInterval(checkInterval);
-                    callback();
-                }
-            }, 100);
-            
-            // Timeout after 10 seconds
-            setTimeout(() => {
-                clearInterval(checkInterval);
-                if (typeof maplibregl === 'undefined') {
-                    console.error('MapLibre GL failed to load after 10 seconds');
-                    const loadingIndicator = document.getElementById('mapLoading');
-                    if (loadingIndicator) {
-                        loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library failed to load. Please check your internet connection and refresh.</p></div>';
-                    }
-                }
-            }, 10000);
-            return;
-        }
-        
-        // Load the library
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js';
-        script.onload = function() {
-            console.log('MapLibre GL library loaded successfully');
-            callback();
-        };
-        script.onerror = function() {
-            console.error('Failed to load MapLibre GL library');
-            const loadingIndicator = document.getElementById('mapLoading');
-            if (loadingIndicator) {
-                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Failed to load map library. Please check your internet connection.</p></div>';
-            }
-        };
-        document.head.appendChild(script);
-    }
+    const TOKEN = '{{ $apiToken }}';
 
     function initMap() {
-        // Check if MapLibre GL is loaded
-        if (typeof maplibregl === 'undefined') {
-            console.error('MapLibre GL library not loaded!');
-            const loadingIndicator = document.getElementById('mapLoading');
-            if (loadingIndicator) {
-                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library not loaded. Please refresh the page.</p></div>';
-            }
-            return;
-        }
-        
-        // Check if map container exists
-        const mapContainer = document.getElementById('map');
-        if (!mapContainer) {
-            console.error('Map container not found!');
-            return;
-        }
-        
         // Default center - Yangon, Myanmar
         const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
         
-        console.log('Initializing map...');
-        
-        try {
-            // Try MapTiler first (better quality)
-            map = new maplibregl.Map({
-                container: 'map',
-                // Using MapTiler Streets v2 style
-                style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
-                center: defaultCenter,
-                zoom: 12,
-                minZoom: 0,
-                maxZoom: 22, // MapTiler supports up to zoom 22
-                // Performance optimizations
-                antialias: false,
-                preserveDrawingBuffer: false,
-                fadeDuration: 0
-            });
-            
-            console.log('Map instance created successfully with MapTiler');
-            
-            // If MapTiler fails, fallback to OpenStreetMap
-            map.on('error', function(e) {
-                if (e.error && e.error.message && e.error.message.includes('style')) {
-                    console.warn('MapTiler failed, trying OpenStreetMap fallback...');
-                    // Fallback to OpenStreetMap
-                    map.setStyle('https://demotiles.maplibre.org/style.json');
-                }
-            });
-            
-        } catch (error) {
-            console.error('Failed to create map:', error);
-            // Try fallback to OpenStreetMap
-            try {
-                console.log('Trying OpenStreetMap fallback...');
-                map = new maplibregl.Map({
-                    container: 'map',
-                    style: 'https://demotiles.maplibre.org/style.json',
-                    center: defaultCenter,
-                    zoom: 12,
-                    minZoom: 0,
-                    maxZoom: 18
-                });
-                console.log('Map created with OpenStreetMap fallback');
-            } catch (fallbackError) {
-                console.error('Fallback also failed:', fallbackError);
-                const loadingIndicator = document.getElementById('mapLoading');
-                if (loadingIndicator) {
-                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error creating map: ' + error.message + '</p><p style="color: #666; font-size: 12px; margin-top: 10px;">Please check browser console for details.</p></div>';
-                }
-                return;
-            }
-        }
+        map = new maplibregl.Map({
+            container: 'map',
+            // Using MapTiler Streets v2 style
+            style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
+            center: defaultCenter,
+            zoom: 12,
+            minZoom: 0,
+            maxZoom: 22, // MapTiler supports up to zoom 22
+            // Performance optimizations
+            antialias: false,
+            preserveDrawingBuffer: false,
+            fadeDuration: 0
+        });
 
         // Add navigation controls
         map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -257,77 +147,27 @@
             }
         });
 
-        // Note: loadRiderLocations() is now called in initializePage() before initMap()
-        // This ensures the API is called even if map fails to load
-        
         // Wait for map to load before adding markers
         map.on('load', function() {
-            console.log('Map loaded successfully!');
             // Hide loading indicator
             const loadingIndicator = document.getElementById('mapLoading');
             if (loadingIndicator) {
                 loadingIndicator.style.display = 'none';
             }
-            // Update markers on map if they already exist from API call
-            if (Object.keys(markers).length > 0) {
-                Object.values(markers).forEach(marker => {
-                    if (!marker._addedToMap) {
-                        marker.addTo(map);
-                        marker._addedToMap = true;
-                    }
-                });
-            }
+            // Load rider locations after map is ready
+            setTimeout(() => {
+                loadRiderLocations();
+            }, 100); // Small delay to ensure map is fully rendered
         });
         
-        // Also listen for style load (more reliable)
-        map.on('style.load', function() {
-            console.log('Map style loaded successfully!');
-            const loadingIndicator = document.getElementById('mapLoading');
-            if (loadingIndicator) {
-                loadingIndicator.style.display = 'none';
-            }
-        });
-        
-        // Handle map style loading errors
-        map.on('style.load', function() {
-            console.log('Map style loaded successfully');
-        });
-        
-        map.on('data', function(e) {
-            if (e.dataType === 'style') {
-                console.log('Map style data loaded');
-            }
-        });
-        
-        // Handle map errors - but still allow API calls to work
+        // Handle map errors
         map.on('error', function(e) {
             console.error('Map error:', e);
-            console.error('Error details:', e.error);
             const loadingIndicator = document.getElementById('mapLoading');
             if (loadingIndicator) {
-                const errorMsg = e.error ? e.error.message : 'Unknown error';
-                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map: ' + errorMsg + '</p><p style="color: #666; font-size: 12px; margin-top: 10px;">Rider locations will still update via Socket.io</p></div>';
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map. Please refresh the page.</p></div>';
             }
-            // Even if map fails, we can still load rider data
-            // The markers will be added once map recovers
         });
-        
-        // Add timeout to detect if map never loads
-        setTimeout(function() {
-            if (map && !map.loaded()) {
-                console.warn('Map taking too long to load, but continuing anyway...');
-                const loadingIndicator = document.getElementById('mapLoading');
-                if (loadingIndicator && loadingIndicator.style.display !== 'none') {
-                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #f59e0b;">Map is loading slowly... Rider locations will still update.</p><p style="color: #666; font-size: 12px; margin-top: 10px;">Check browser console (F12) for details.</p></div>';
-                }
-            } else if (!map) {
-                console.error('Map object is null!');
-                const loadingIndicator = document.getElementById('mapLoading');
-                if (loadingIndicator) {
-                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Map failed to initialize. Check browser console (F12) for errors.</p></div>';
-                }
-            }
-        }, 10000); // 10 second timeout
     }
 
     function loadRiderLocations() {
@@ -511,21 +351,8 @@
                 element: el,
                 anchor: 'bottom'
             })
-            .setLngLat(position);
-            
-            // Only add to map if map is loaded, otherwise it will be added when map loads
-            if (map && map.loaded()) {
-                marker.addTo(map);
-                marker._addedToMap = true;
-            } else {
-                // Store marker to add later when map loads
-                marker._pendingAdd = true;
-                map.once('load', () => {
-                    marker.addTo(map);
-                    marker._pendingAdd = false;
-                    marker._addedToMap = true;
-                });
-            }
+            .setLngLat(position)
+            .addTo(map);
 
             // Create popup content
             const popupContent = `
@@ -639,28 +466,11 @@
         }
     });
 
-    // Initialize page - ensure map loads first, then load rider data
-    function initializePage() {
-        console.log('Initializing page...');
-        
-        // First, ensure MapLibre GL is loaded, then initialize map
-        loadMapLibre(function() {
-            console.log('MapLibre GL ready, initializing map...');
-            initMap();
-            
-            // After map starts initializing, load rider data
-            // Use a small delay to ensure map object is created
-            setTimeout(() => {
-                loadRiderLocations();
-            }, 500);
-        });
-    }
-    
-    // Initialize when page loads
+    // Initialize map when page loads
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializePage);
+        document.addEventListener('DOMContentLoaded', initMap);
     } else {
-        initializePage();
+        initMap();
     }
     
     // Don't auto-refresh by default - use Socket.io for real-time updates instead
@@ -768,7 +578,8 @@
         console.log('Updating rider location:', riderId, position);
         
         // Update existing marker position smoothly (without resetting map view)
-        // Normalize riderId to number for consistent key lookup (riderIdNum already declared above)
+        // Normalize riderId to number for consistent key lookup
+        const riderIdNum = Number(riderId);
         const riderIdStr = String(riderId);
         
         // Check both string and number keys (API might return string, Socket.io might return number)
@@ -790,7 +601,8 @@
             // Smoothly update marker position without affecting map zoom/pan
             existingMarker.setLngLat(position);
             
-            // Update marker label if we have cached rider data (cachedData already declared above)
+            // Update marker label if we have cached rider data
+            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId] || {};
             const riderName = cachedData.name || `Rider ${riderIdNum}`;
             const markerElement = existingMarker.getElement();
             const nameLabel = markerElement.querySelector('div:last-child');
@@ -821,7 +633,9 @@
             
             // Check if there's a marker with the same rider but different key format
             // Try to find by matching cached rider names
-            // Note: riderIdNum, riderIdStr, and cachedData are already declared above in the function scope
+            const riderIdNum = Number(riderId);
+            const riderIdStr = String(riderId);
+            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId];
             
             let foundExisting = false;
             if (cachedData && cachedData.name) {
@@ -897,23 +711,8 @@
                 element: el,
                 anchor: 'bottom'
             })
-            .setLngLat(position);
-            
-            // Only add to map if map is loaded, otherwise it will be added when map loads
-            if (map && map.loaded()) {
-                marker.addTo(map);
-                marker._addedToMap = true;
-            } else {
-                // Store marker to add later when map loads
-                marker._pendingAdd = true;
-                if (map) {
-                    map.once('load', () => {
-                        marker.addTo(map);
-                        marker._pendingAdd = false;
-                        marker._addedToMap = true;
-                    });
-                }
-            }
+            .setLngLat(position)
+            .addTo(map);
             
             // Create popup
             const timestamp = data.timestamp || data.last_update || new Date().toISOString();
@@ -947,4 +746,3 @@
 </script>
 @endpush
 @endsection
-
