@@ -99,22 +99,40 @@
     const TOKEN = '{{ $apiToken }}';
 
     function initMap() {
-        // Default center - Yangon, Myanmar
-        const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
-        
-        map = new maplibregl.Map({
-            container: 'map',
-            // Using MapTiler Streets v2 style
-            style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
-            center: defaultCenter,
-            zoom: 12,
-            minZoom: 0,
-            maxZoom: 22, // MapTiler supports up to zoom 22
-            // Performance optimizations
-            antialias: false,
-            preserveDrawingBuffer: false,
-            fadeDuration: 0
-        });
+        try {
+            // Default center - Yangon, Myanmar
+            const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
+            
+            // Check if maplibregl is loaded
+            if (typeof maplibregl === 'undefined') {
+                console.error('MapLibre GL is not loaded');
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library failed to load. Please refresh the page.</p></div>';
+                }
+                return;
+            }
+            
+            map = new maplibregl.Map({
+                container: 'map',
+                // Using MapTiler Streets v2 style
+                style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
+                center: defaultCenter,
+                zoom: 12,
+                minZoom: 0,
+                maxZoom: 22, // MapTiler supports up to zoom 22
+                // Performance optimizations
+                antialias: false,
+                preserveDrawingBuffer: false,
+                fadeDuration: 0
+            });
+        } catch (error) {
+            console.error('Error initializing map:', error);
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error initializing map: ' + error.message + '</p></div>';
+            }
+        }
 
         // Add navigation controls
         map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -180,6 +198,13 @@
         console.log('Token exists:', !!TOKEN);
         console.log('Token length:', TOKEN ? TOKEN.length : 0);
         
+        // Check if token exists
+        if (!TOKEN || TOKEN.trim() === '') {
+            console.error('API token is missing');
+            document.getElementById('riderList').innerHTML = '<p class="text-red-500 text-center">Error: Authentication token is missing. Please refresh the page.</p>';
+            return;
+        }
+        
         fetch(`${API_BASE}/riders/locations`, {
             headers: {
                 'Authorization': `Bearer ${TOKEN}`,
@@ -193,6 +218,12 @@
                 // Log response text for debugging
                 const text = await res.text();
                 console.error('Error response:', text);
+                
+                // Handle 401 Unauthorized
+                if (res.status === 401) {
+                    throw new Error('Authentication failed. Please refresh the page to login again.');
+                }
+                
                 throw new Error(`HTTP error! status: ${res.status}, message: ${text || 'Unknown error'}`);
             }
             
@@ -236,7 +267,17 @@
         })
         .catch(err => {
             console.error('Error loading rider locations:', err);
-            document.getElementById('riderList').innerHTML = '<p class="text-red-500 text-center">Error loading riders: ' + (err.message || 'Unknown error') + '</p>';
+            const errorMessage = err.message || 'Unknown error';
+            document.getElementById('riderList').innerHTML = '<p class="text-red-500 text-center">Error loading riders: ' + errorMessage + '</p>';
+            
+            // If map is loaded, show error on map too
+            if (map) {
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.style.display = 'flex';
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading rider locations: ' + errorMessage + '</p><button onclick="loadRiderLocations()" style="margin-top: 10px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Retry</button></div>';
+                }
+            }
         });
     }
 
@@ -478,9 +519,21 @@
     
     // Socket.io: Connect to JavaScript Location Tracker server for real-time rider location updates
     let socket = null;
-    const LOCATION_TRACKER_URL = '{{ env("LOCATION_TRACKER_URL", "http://localhost:3000") }}';
+    const LOCATION_TRACKER_URL = '{{ config("services.location_tracker.url", "http://localhost:3000") }}';
     
     function connectSocket() {
+        // Check if Socket.io is loaded
+        if (typeof io === 'undefined') {
+            console.warn('Socket.io library not loaded. Real-time updates will not work.');
+            return;
+        }
+        
+        // Check if LOCATION_TRACKER_URL is valid
+        if (!LOCATION_TRACKER_URL || LOCATION_TRACKER_URL === '') {
+            console.warn('LOCATION_TRACKER_URL is not configured. Real-time updates will not work.');
+            return;
+        }
+        
         console.log('Connecting to Location Tracker server:', LOCATION_TRACKER_URL);
         
         try {
@@ -489,7 +542,8 @@
                 reconnection: true,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000,
-                reconnectionAttempts: Infinity
+                reconnectionAttempts: Infinity,
+                timeout: 5000
             });
             
             socket.on('connect', () => {
@@ -507,9 +561,11 @@
             socket.on('location:all', (locations) => {
                 console.log('Received all rider locations:', locations);
                 // Only update markers, don't reset map view
-                locations.forEach(location => {
-                    updateRiderLocationOnMap(location);
-                });
+                if (Array.isArray(locations)) {
+                    locations.forEach(location => {
+                        updateRiderLocationOnMap(location);
+                    });
+                }
             });
             
             // Receive real-time location updates
@@ -520,6 +576,11 @@
             
             socket.on('disconnect', () => {
                 console.log('Socket.io disconnected. Will reconnect automatically...');
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.warn('Socket.io connection error:', error.message);
+                // Don't spam retries - let the reconnection handle it
             });
             
             socket.on('error', (error) => {
@@ -562,10 +623,13 @@
             return;
         }
         
+        // Normalize riderId to number for consistent key lookup (declare once)
+        const riderIdNum = Number(riderId);
+        const riderIdStr = String(riderId);
+        
         // Safety check: If rider_id looks like a user_id (e.g., 10) but we have cached data for a different rider_id (e.g., 2),
         // it means we're receiving wrong data - skip it
-        const riderIdNum = Number(riderId);
-        const cachedData = riderDataCache[riderIdNum] || riderDataCache[String(riderId)];
+        const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr];
         if (!cachedData) {
             // No cached data means this rider_id hasn't been loaded from API yet
             // This could be old data with wrong rider_id - skip it to prevent duplicates
@@ -578,9 +642,6 @@
         console.log('Updating rider location:', riderId, position);
         
         // Update existing marker position smoothly (without resetting map view)
-        // Normalize riderId to number for consistent key lookup
-        const riderIdNum = Number(riderId);
-        const riderIdStr = String(riderId);
         
         // Check both string and number keys (API might return string, Socket.io might return number)
         const existingMarker = markers[riderIdNum] || markers[riderIdStr] || markers[riderId];
@@ -602,8 +663,7 @@
             existingMarker.setLngLat(position);
             
             // Update marker label if we have cached rider data
-            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId] || {};
-            const riderName = cachedData.name || `Rider ${riderIdNum}`;
+            const riderName = cachedRiderData.name || `Rider ${riderIdNum}`;
             const markerElement = existingMarker.getElement();
             const nameLabel = markerElement.querySelector('div:last-child');
             if (nameLabel && nameLabel.textContent !== riderName) {
@@ -616,9 +676,9 @@
                 const popupContent = `
                     <div style="padding: 5px;">
                         <h3 style="margin: 0 0 5px 0; font-size: 16px; font-weight: 600;">${riderName}</h3>
-                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${cachedData.phone || 'N/A'}</p>
-                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${cachedData.status || 'active'}</span></p>
-                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${cachedData.package_count || 0}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px; color: #666;">${cachedRiderData.phone || 'N/A'}</p>
+                        <p style="margin: 3px 0; font-size: 14px;">Status: <span style="font-weight: 500;">${cachedRiderData.status || 'active'}</span></p>
+                        <p style="margin: 3px 0; font-size: 14px;">Packages: <span style="font-weight: 500;">${cachedRiderData.package_count || 0}</span></p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #999;">Last update: ${new Date(timestamp).toLocaleString()}</p>
                     </div>
                 `;
@@ -633,9 +693,7 @@
             
             // Check if there's a marker with the same rider but different key format
             // Try to find by matching cached rider names
-            const riderIdNum = Number(riderId);
-            const riderIdStr = String(riderId);
-            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId];
+            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr];
             
             let foundExisting = false;
             if (cachedData && cachedData.name) {

@@ -18,6 +18,11 @@ Route::get('/', function () {
 	return redirect()->route('office.login');
 });
 
+// Handle Chrome DevTools requests gracefully
+Route::get('/.well-known/appspecific/com.chrome.devtools.json', function () {
+	return response()->json([]);
+});
+
 // Route to check database schema (diagnostic)
 Route::get('/check-schema', function () {
 	try {
