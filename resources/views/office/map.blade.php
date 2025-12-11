@@ -196,9 +196,8 @@
             }
         });
 
-        // Load rider locations immediately (don't wait for map to load)
+        // Note: loadRiderLocations() is now called in initializePage() before initMap()
         // This ensures the API is called even if map fails to load
-        loadRiderLocations();
         
         // Wait for map to load before adding markers
         map.on('load', function() {
@@ -248,7 +247,13 @@
                 console.warn('Map taking too long to load, but continuing anyway...');
                 const loadingIndicator = document.getElementById('mapLoading');
                 if (loadingIndicator && loadingIndicator.style.display !== 'none') {
-                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #f59e0b;">Map is loading slowly... Rider locations will still update.</p></div>';
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #f59e0b;">Map is loading slowly... Rider locations will still update.</p><p style="color: #666; font-size: 12px; margin-top: 10px;">Check browser console (F12) for details.</p></div>';
+                }
+            } else if (!map) {
+                console.error('Map object is null!');
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Map failed to initialize. Check browser console (F12) for errors.</p></div>';
                 }
             }
         }, 10000); // 10 second timeout
@@ -563,11 +568,23 @@
         }
     });
 
-    // Initialize map when page loads
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initMap);
-    } else {
+    // Load rider locations immediately, even before map initializes
+    // This ensures data loads even if map fails
+    function initializePage() {
+        console.log('Initializing page...');
+        
+        // Load rider data immediately (don't wait for map)
+        loadRiderLocations();
+        
+        // Then initialize map
         initMap();
+    }
+    
+    // Initialize when page loads
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializePage);
+    } else {
+        initializePage();
     }
     
     // Don't auto-refresh by default - use Socket.io for real-time updates instead
