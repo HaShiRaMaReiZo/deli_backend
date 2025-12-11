@@ -762,8 +762,7 @@
         console.log('Updating rider location:', riderId, position);
         
         // Update existing marker position smoothly (without resetting map view)
-        // Normalize riderId to number for consistent key lookup
-        const riderIdNum = Number(riderId);
+        // Normalize riderId to number for consistent key lookup (riderIdNum already declared above)
         const riderIdStr = String(riderId);
         
         // Check both string and number keys (API might return string, Socket.io might return number)
@@ -785,8 +784,7 @@
             // Smoothly update marker position without affecting map zoom/pan
             existingMarker.setLngLat(position);
             
-            // Update marker label if we have cached rider data
-            const cachedData = riderDataCache[riderIdNum] || riderDataCache[riderIdStr] || riderDataCache[riderId] || {};
+            // Update marker label if we have cached rider data (cachedData already declared above)
             const riderName = cachedData.name || `Rider ${riderIdNum}`;
             const markerElement = existingMarker.getElement();
             const nameLabel = markerElement.querySelector('div:last-child');
