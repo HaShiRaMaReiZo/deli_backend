@@ -260,8 +260,8 @@ class PackageController extends Controller
     public function uploadProof(Request $request, $id)
     {
         $request->validate([
-            'proof_type' => 'required|in:photo,signature',
-            'proof_data' => 'required',
+            'proof_type' => 'nullable|in:photo,signature',
+            'proof_data' => 'nullable',
             'delivery_latitude' => 'nullable|numeric',
             'delivery_longitude' => 'nullable|numeric',
             'delivered_to_name' => 'nullable|string',
@@ -274,24 +274,26 @@ class PackageController extends Controller
         $package = Package::where('current_rider_id', $rider->id)
             ->findOrFail($id);
 
-        // Handle proof upload
-        $proofData = $request->proof_data;
-        if ($request->proof_type === 'photo' && $request->hasFile('proof_data')) {
-            $proofData = $request->file('proof_data')->store('delivery_proofs', 'public');
-        }
+        // Handle proof upload (optional)
+        if ($request->has('proof_type') && $request->has('proof_data')) {
+            $proofData = $request->proof_data;
+            if ($request->proof_type === 'photo' && $request->hasFile('proof_data')) {
+                $proofData = $request->file('proof_data')->store('delivery_proofs', 'public');
+            }
 
-        DeliveryProof::create([
-            'package_id' => $package->id,
-            'rider_id' => $rider->id,
-            'proof_type' => $request->proof_type,
-            'proof_data' => $proofData,
-            'delivery_latitude' => $request->delivery_latitude,
-            'delivery_longitude' => $request->delivery_longitude,
-            'delivered_to_name' => $request->delivered_to_name,
-            'delivered_to_phone' => $request->delivered_to_phone,
-            'notes' => $request->notes,
-            'created_at' => now(),
-        ]);
+            DeliveryProof::create([
+                'package_id' => $package->id,
+                'rider_id' => $rider->id,
+                'proof_type' => $request->proof_type,
+                'proof_data' => $proofData,
+                'delivery_latitude' => $request->delivery_latitude,
+                'delivery_longitude' => $request->delivery_longitude,
+                'delivered_to_name' => $request->delivered_to_name,
+                'delivered_to_phone' => $request->delivered_to_phone,
+                'notes' => $request->notes,
+                'created_at' => now(),
+            ]);
+        }
 
         // Update package status to delivered
         $package->status = 'delivered';
