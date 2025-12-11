@@ -90,12 +90,18 @@
 @push('scripts')
 <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 <script>
+    // ============================================
+    // CACHE BUSTER - Version: 2025-12-11-v3
+    // If you see JavaScript errors, do a HARD REFRESH:
+    // Windows: Ctrl+Shift+R or Ctrl+F5
+    // Mac: Cmd+Shift+R
+    // ============================================
     let map;
     let markers = {};
     let autoRefreshInterval = null;
     let isInitialLoad = true; // Track if this is the first load
     const API_BASE = '/api/office';
-    const TOKEN = '{{ $apiToken }}';
+    const TOKEN = '{{ $apiToken ?? '' }}';
 
     // Load MapLibre GL library dynamically and wait for it
     function loadMapLibre(callback) {
