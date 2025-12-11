@@ -99,22 +99,71 @@
     const TOKEN = '{{ $apiToken }}';
 
     function initMap() {
+        // Check if MapLibre GL is loaded
+        if (typeof maplibregl === 'undefined') {
+            console.error('MapLibre GL library not loaded!');
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library not loaded. Please refresh the page.</p></div>';
+            }
+            return;
+        }
+        
         // Default center - Yangon, Myanmar
         const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
         
-        map = new maplibregl.Map({
-            container: 'map',
-            // Using MapTiler Streets v2 style
-            style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
-            center: defaultCenter,
-            zoom: 12,
-            minZoom: 0,
-            maxZoom: 22, // MapTiler supports up to zoom 22
-            // Performance optimizations
-            antialias: false,
-            preserveDrawingBuffer: false,
-            fadeDuration: 0
-        });
+        console.log('Initializing map...');
+        
+        try {
+            // Try MapTiler first (better quality)
+            map = new maplibregl.Map({
+                container: 'map',
+                // Using MapTiler Streets v2 style
+                style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
+                center: defaultCenter,
+                zoom: 12,
+                minZoom: 0,
+                maxZoom: 22, // MapTiler supports up to zoom 22
+                // Performance optimizations
+                antialias: false,
+                preserveDrawingBuffer: false,
+                fadeDuration: 0
+            });
+            
+            console.log('Map instance created successfully with MapTiler');
+            
+            // If MapTiler fails, fallback to OpenStreetMap
+            map.on('error', function(e) {
+                if (e.error && e.error.message && e.error.message.includes('style')) {
+                    console.warn('MapTiler failed, trying OpenStreetMap fallback...');
+                    // Fallback to OpenStreetMap
+                    map.setStyle('https://demotiles.maplibre.org/style.json');
+                }
+            });
+            
+        } catch (error) {
+            console.error('Failed to create map:', error);
+            // Try fallback to OpenStreetMap
+            try {
+                console.log('Trying OpenStreetMap fallback...');
+                map = new maplibregl.Map({
+                    container: 'map',
+                    style: 'https://demotiles.maplibre.org/style.json',
+                    center: defaultCenter,
+                    zoom: 12,
+                    minZoom: 0,
+                    maxZoom: 18
+                });
+                console.log('Map created with OpenStreetMap fallback');
+            } catch (fallbackError) {
+                console.error('Fallback also failed:', fallbackError);
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error creating map: ' + error.message + '</p><p style="color: #666; font-size: 12px; margin-top: 10px;">Please check browser console for details.</p></div>';
+                }
+                return;
+            }
+        }
 
         // Add navigation controls
         map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -147,6 +196,10 @@
             }
         });
 
+        // Load rider locations immediately (don't wait for map to load)
+        // This ensures the API is called even if map fails to load
+        loadRiderLocations();
+        
         // Wait for map to load before adding markers
         map.on('load', function() {
             // Hide loading indicator
@@ -154,20 +207,51 @@
             if (loadingIndicator) {
                 loadingIndicator.style.display = 'none';
             }
-            // Load rider locations after map is ready
-            setTimeout(() => {
-                loadRiderLocations();
-            }, 100); // Small delay to ensure map is fully rendered
-        });
-        
-        // Handle map errors
-        map.on('error', function(e) {
-            console.error('Map error:', e);
-            const loadingIndicator = document.getElementById('mapLoading');
-            if (loadingIndicator) {
-                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map. Please refresh the page.</p></div>';
+            // Update markers on map if they already exist from API call
+            if (Object.keys(markers).length > 0) {
+                Object.values(markers).forEach(marker => {
+                    if (!marker._addedToMap) {
+                        marker.addTo(map);
+                        marker._addedToMap = true;
+                    }
+                });
             }
         });
+        
+        // Handle map style loading errors
+        map.on('style.load', function() {
+            console.log('Map style loaded successfully');
+        });
+        
+        map.on('data', function(e) {
+            if (e.dataType === 'style') {
+                console.log('Map style data loaded');
+            }
+        });
+        
+        // Handle map errors - but still allow API calls to work
+        map.on('error', function(e) {
+            console.error('Map error:', e);
+            console.error('Error details:', e.error);
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                const errorMsg = e.error ? e.error.message : 'Unknown error';
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map: ' + errorMsg + '</p><p style="color: #666; font-size: 12px; margin-top: 10px;">Rider locations will still update via Socket.io</p></div>';
+            }
+            // Even if map fails, we can still load rider data
+            // The markers will be added once map recovers
+        });
+        
+        // Add timeout to detect if map never loads
+        setTimeout(function() {
+            if (map && !map.loaded()) {
+                console.warn('Map taking too long to load, but continuing anyway...');
+                const loadingIndicator = document.getElementById('mapLoading');
+                if (loadingIndicator && loadingIndicator.style.display !== 'none') {
+                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #f59e0b;">Map is loading slowly... Rider locations will still update.</p></div>';
+                }
+            }
+        }, 10000); // 10 second timeout
     }
 
     function loadRiderLocations() {
@@ -351,8 +435,21 @@
                 element: el,
                 anchor: 'bottom'
             })
-            .setLngLat(position)
-            .addTo(map);
+            .setLngLat(position);
+            
+            // Only add to map if map is loaded, otherwise it will be added when map loads
+            if (map && map.loaded()) {
+                marker.addTo(map);
+                marker._addedToMap = true;
+            } else {
+                // Store marker to add later when map loads
+                marker._pendingAdd = true;
+                map.once('load', () => {
+                    marker.addTo(map);
+                    marker._pendingAdd = false;
+                    marker._addedToMap = true;
+                });
+            }
 
             // Create popup content
             const popupContent = `
@@ -711,8 +808,23 @@
                 element: el,
                 anchor: 'bottom'
             })
-            .setLngLat(position)
-            .addTo(map);
+            .setLngLat(position);
+            
+            // Only add to map if map is loaded, otherwise it will be added when map loads
+            if (map && map.loaded()) {
+                marker.addTo(map);
+                marker._addedToMap = true;
+            } else {
+                // Store marker to add later when map loads
+                marker._pendingAdd = true;
+                if (map) {
+                    map.once('load', () => {
+                        marker.addTo(map);
+                        marker._pendingAdd = false;
+                        marker._addedToMap = true;
+                    });
+                }
+            }
             
             // Create popup
             const timestamp = data.timestamp || data.last_update || new Date().toISOString();
