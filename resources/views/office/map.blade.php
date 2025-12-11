@@ -88,7 +88,6 @@
 @endpush
 
 @push('scripts')
-<script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
 <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 <script>
     let map;
@@ -98,6 +97,55 @@
     const API_BASE = '/api/office';
     const TOKEN = '{{ $apiToken }}';
 
+    // Load MapLibre GL library dynamically and wait for it
+    function loadMapLibre(callback) {
+        if (typeof maplibregl !== 'undefined') {
+            // Already loaded
+            callback();
+            return;
+        }
+        
+        // Check if script is already being loaded
+        if (document.querySelector('script[src*="maplibre-gl"]')) {
+            // Wait for it to load
+            const checkInterval = setInterval(() => {
+                if (typeof maplibregl !== 'undefined') {
+                    clearInterval(checkInterval);
+                    callback();
+                }
+            }, 100);
+            
+            // Timeout after 10 seconds
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                if (typeof maplibregl === 'undefined') {
+                    console.error('MapLibre GL failed to load after 10 seconds');
+                    const loadingIndicator = document.getElementById('mapLoading');
+                    if (loadingIndicator) {
+                        loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library failed to load. Please check your internet connection and refresh.</p></div>';
+                    }
+                }
+            }, 10000);
+            return;
+        }
+        
+        // Load the library
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js';
+        script.onload = function() {
+            console.log('MapLibre GL library loaded successfully');
+            callback();
+        };
+        script.onerror = function() {
+            console.error('Failed to load MapLibre GL library');
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Failed to load map library. Please check your internet connection.</p></div>';
+            }
+        };
+        document.head.appendChild(script);
+    }
+
     function initMap() {
         // Check if MapLibre GL is loaded
         if (typeof maplibregl === 'undefined') {
@@ -106,6 +154,13 @@
             if (loadingIndicator) {
                 loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error: Map library not loaded. Please refresh the page.</p></div>';
             }
+            return;
+        }
+        
+        // Check if map container exists
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) {
+            console.error('Map container not found!');
             return;
         }
         
@@ -201,6 +256,7 @@
         
         // Wait for map to load before adding markers
         map.on('load', function() {
+            console.log('Map loaded successfully!');
             // Hide loading indicator
             const loadingIndicator = document.getElementById('mapLoading');
             if (loadingIndicator) {
@@ -214,6 +270,15 @@
                         marker._addedToMap = true;
                     }
                 });
+            }
+        });
+        
+        // Also listen for style load (more reliable)
+        map.on('style.load', function() {
+            console.log('Map style loaded successfully!');
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'none';
             }
         });
         
@@ -568,16 +633,21 @@
         }
     });
 
-    // Load rider locations immediately, even before map initializes
-    // This ensures data loads even if map fails
+    // Initialize page - ensure map loads first, then load rider data
     function initializePage() {
         console.log('Initializing page...');
         
-        // Load rider data immediately (don't wait for map)
-        loadRiderLocations();
-        
-        // Then initialize map
-        initMap();
+        // First, ensure MapLibre GL is loaded, then initialize map
+        loadMapLibre(function() {
+            console.log('MapLibre GL ready, initializing map...');
+            initMap();
+            
+            // After map starts initializing, load rider data
+            // Use a small delay to ensure map object is created
+            setTimeout(() => {
+                loadRiderLocations();
+            }, 500);
+        });
     }
     
     // Initialize when page loads
