@@ -815,8 +815,7 @@
             
             // Check if there's a marker with the same rider but different key format
             // Try to find by matching cached rider names
-            // Note: riderIdNum and cachedData are already declared above in the function scope
-            const riderIdStr = String(riderId);
+            // Note: riderIdNum, riderIdStr, and cachedData are already declared above in the function scope
             
             let foundExisting = false;
             if (cachedData && cachedData.name) {
