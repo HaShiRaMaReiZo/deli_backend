@@ -293,8 +293,35 @@ class PackageController extends Controller
             'created_at' => now(),
         ]);
 
+        // Update package status to delivered
+        $package->status = 'delivered';
+        if (!$package->delivered_at) {
+            $package->delivered_at = now();
+        }
+        $package->save();
+
+        // Get delivery location (from request or rider's current location)
+        $latitude = $request->delivery_latitude ?? $rider->current_latitude;
+        $longitude = $request->delivery_longitude ?? $rider->current_longitude;
+
+        // Log status history with delivery location
+        PackageStatusHistory::create([
+            'package_id' => $package->id,
+            'status' => 'delivered',
+            'changed_by_user_id' => $request->user()->id,
+            'changed_by_type' => 'rider',
+            'notes' => $request->notes ?? 'Package delivered with proof',
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'created_at' => now(),
+        ]);
+
+        // Broadcast status change via WebSocket
+        event(new PackageStatusChanged($package->id, 'delivered', $package->merchant_id));
+
         return response()->json([
-            'message' => 'Delivery proof uploaded successfully',
+            'message' => 'Delivery proof uploaded successfully and package marked as delivered',
+            'package' => $package->load(['merchant', 'statusHistory']),
         ]);
     }
 
