@@ -17,6 +17,17 @@ class SupabaseStorageService
         // Use service_role key if available (bypasses RLS), otherwise use anon key
         $this->key = env('SUPABASE_SERVICE_ROLE_KEY') ?: env('SUPABASE_KEY');
         $this->bucket = env('SUPABASE_BUCKET', 'package-images');
+        
+        // Validate URL format
+        if ($this->url && !filter_var($this->url, FILTER_VALIDATE_URL)) {
+            Log::warning('Invalid SUPABASE_URL format', ['url' => $this->url]);
+            $this->url = null;
+        }
+        
+        // Remove trailing slash if present
+        if ($this->url) {
+            $this->url = rtrim($this->url, '/');
+        }
     }
 
     /**
@@ -122,6 +133,28 @@ class SupabaseStorageService
                 ]);
                 return null;
             }
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            // DNS resolution or connection errors
+            $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
+            $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
+            $exceptionMsg = substr($exceptionMsg, 0, 200);
+            
+            // Check if it's a DNS resolution error
+            if (strpos($exceptionMsg, 'Could not resolve host') !== false || 
+                strpos($exceptionMsg, 'getaddrinfo') !== false) {
+                $errorMessage = 'DNS Error: Cannot resolve Supabase hostname. Please check SUPABASE_URL environment variable.';
+            } else {
+                $errorMessage = 'Connection Error: ' . $exceptionMsg;
+            }
+            
+            Log::error('Supabase upload connection error', [
+                'path' => $path,
+                'bucket' => $this->bucket,
+                'url' => $this->url,
+                'error' => $exceptionMsg,
+                'error_type' => 'DNS/Connection',
+            ]);
+            return null;
         } catch (\Exception $e) {
             // Sanitize exception message to ensure valid UTF-8
             $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
@@ -132,6 +165,7 @@ class SupabaseStorageService
             Log::error('Supabase upload exception', [
                 'path' => $path,
                 'bucket' => $this->bucket,
+                'url' => $this->url,
                 'error' => $exceptionMsg,
             ]);
             return null;

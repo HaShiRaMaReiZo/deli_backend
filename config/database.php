@@ -100,11 +100,12 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'require'),
-            // Connection pooling and performance optimizations
+            // Connection pooling and performance optimizations for Transaction Mode Pooler
             'options' => extension_loaded('pdo_pgsql') ? array_filter([
                 PDO::ATTR_PERSISTENT => false, // Don't use persistent connections (causes issues with poolers)
                 PDO::ATTR_EMULATE_PREPARES => false, // Use native prepared statements
-                PDO::ATTR_TIMEOUT => 5, // Connection timeout in seconds
+                PDO::ATTR_TIMEOUT => 3, // Reduced timeout for faster failure detection
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, // Better error handling
             ]) : [],
         ],
 
