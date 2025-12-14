@@ -133,41 +133,37 @@ class SupabaseStorageService
                 ]);
                 return null;
             }
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            // DNS resolution or connection errors
+        } catch (\Exception $e) {
+            // Check if it's a DNS resolution or connection error
             $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
             $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
             $exceptionMsg = substr($exceptionMsg, 0, 200);
             
             // Check if it's a DNS resolution error
             if (strpos($exceptionMsg, 'Could not resolve host') !== false || 
-                strpos($exceptionMsg, 'getaddrinfo') !== false) {
-                $errorMessage = 'DNS Error: Cannot resolve Supabase hostname. Please check SUPABASE_URL environment variable.';
+                strpos($exceptionMsg, 'getaddrinfo') !== false ||
+                strpos($exceptionMsg, 'cURL error 6') !== false) {
+                $errorMessage = 'DNS Error: Cannot resolve Supabase hostname. Please check SUPABASE_URL environment variable in Render.';
+                
+                Log::error('Supabase upload DNS error', [
+                    'path' => $path,
+                    'bucket' => $this->bucket,
+                    'url' => $this->url,
+                    'error' => $exceptionMsg,
+                    'error_type' => 'DNS Resolution',
+                    'hint' => 'Check SUPABASE_URL in Render environment variables',
+                ]);
             } else {
-                $errorMessage = 'Connection Error: ' . $exceptionMsg;
+                $errorMessage = 'Exception: ' . $exceptionMsg;
+                
+                Log::error('Supabase upload exception', [
+                    'path' => $path,
+                    'bucket' => $this->bucket,
+                    'url' => $this->url,
+                    'error' => $exceptionMsg,
+                ]);
             }
             
-            Log::error('Supabase upload connection error', [
-                'path' => $path,
-                'bucket' => $this->bucket,
-                'url' => $this->url,
-                'error' => $exceptionMsg,
-                'error_type' => 'DNS/Connection',
-            ]);
-            return null;
-        } catch (\Exception $e) {
-            // Sanitize exception message to ensure valid UTF-8
-            $exceptionMsg = mb_convert_encoding($e->getMessage(), 'UTF-8', 'UTF-8');
-            $exceptionMsg = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $exceptionMsg);
-            $exceptionMsg = substr($exceptionMsg, 0, 200);
-            $errorMessage = 'Exception: ' . $exceptionMsg;
-            
-            Log::error('Supabase upload exception', [
-                'path' => $path,
-                'bucket' => $this->bucket,
-                'url' => $this->url,
-                'error' => $exceptionMsg,
-            ]);
             return null;
         }
     }
