@@ -472,4 +472,30 @@ class PackageController extends Controller
             'confirmed_package_ids' => $confirmed,
         ]);
     }
+
+    /**
+     * Get delivered packages for the current month only
+     * This endpoint returns packages that were delivered in the current month
+     * (e.g., if it's January, only January deliveries; if February, only February, etc.)
+     */
+    public function history(Request $request)
+    {
+        $rider = $request->user()->rider;
+        
+        // Get current month start and end dates
+        $now = now();
+        $startOfMonth = $now->copy()->startOfMonth();
+        $endOfMonth = $now->copy()->endOfMonth();
+        
+        // Get delivered packages for current month only
+        $packages = Package::where('current_rider_id', $rider->id)
+            ->where('status', 'delivered')
+            ->whereNotNull('delivered_at')
+            ->whereBetween('delivered_at', [$startOfMonth, $endOfMonth])
+            ->with(['merchant', 'statusHistory.changedBy'])
+            ->orderBy('delivered_at', 'desc')
+            ->get();
+        
+        return response()->json($packages);
+    }
 }

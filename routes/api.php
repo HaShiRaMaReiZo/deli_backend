@@ -50,6 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Rider routes
     Route::prefix('rider')->middleware('role:rider')->group(function () {
         Route::get('/packages', [RiderPackageController::class, 'index']);
+        Route::get('/packages/history', [RiderPackageController::class, 'history']);
         Route::get('/packages/{id}', [RiderPackageController::class, 'show']);
         Route::put('/packages/{id}/status', [RiderPackageController::class, 'updateStatus']);
         Route::post('/packages/{id}/receive-from-office', [RiderPackageController::class, 'receiveFromOffice']);
