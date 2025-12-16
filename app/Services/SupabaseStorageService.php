@@ -41,10 +41,11 @@ class SupabaseStorageService
     public function upload(string $path, string $content, ?string &$errorMessage = null): ?string
     {
         if (!$this->url || !$this->key) {
-            $errorMessage = 'Supabase credentials not configured (missing SUPABASE_URL or SUPABASE_KEY)';
-            Log::error('Supabase credentials not configured', [
+            $errorMessage = 'Supabase not configured. Image upload skipped. Package saved without image.';
+            Log::warning('Supabase credentials not configured - image upload skipped', [
                 'url_set' => !empty($this->url),
                 'key_set' => !empty($this->key),
+                'hint' => 'Set SUPABASE_URL and SUPABASE_KEY in Render environment variables to enable image uploads',
             ]);
             return null;
         }

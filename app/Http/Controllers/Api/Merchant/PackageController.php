@@ -28,7 +28,8 @@ class PackageController extends Controller
             ->where('is_draft', false)
             ->with(['currentRider:id,name,phone', 'statusHistory' => function ($query) {
                 // Only get the latest status history entry for each package
-                $query->orderBy('created_at', 'desc')->limit(1);
+                // and include the user who changed it for proper display
+                $query->with('changedBy')->orderBy('created_at', 'desc')->limit(1);
             }])
             ->orderBy('created_at', 'desc')
             ->paginate(20);
@@ -249,7 +250,7 @@ class PackageController extends Controller
         $merchant = $request->user()->merchant;
         
         $package = Package::where('merchant_id', $merchant->id)
-            ->with(['merchant', 'currentRider', 'statusHistory', 'deliveryProof', 'codCollection'])
+            ->with(['merchant', 'currentRider', 'statusHistory.changedBy', 'deliveryProof', 'codCollection'])
             ->findOrFail($id);
 
         return response()->json($package);
@@ -260,12 +261,15 @@ class PackageController extends Controller
         $merchant = $request->user()->merchant;
         
         $package = Package::where('merchant_id', $merchant->id)
-            ->with(['currentRider', 'statusHistory'])
+            ->with(['currentRider', 'statusHistory.changedBy'])
             ->findOrFail($id);
 
         return response()->json([
             'package' => $package,
-            'status_history' => $package->statusHistory()->orderBy('created_at', 'desc')->get(),
+            'status_history' => $package->statusHistory()
+                ->with('changedBy')
+                ->orderBy('created_at', 'desc')
+                ->get(),
         ]);
     }
 
@@ -494,14 +498,6 @@ class PackageController extends Controller
                     ];
                     
                     $package = Package::create($packageDataToSave);
-
-                    if ($imageError) {
-                        $imageUploadErrors[] = [
-                            'index' => $index,
-                            'customer_name' => $packageData['customer_name'],
-                            'error' => $imageError,
-                        ];
-                    }
 
                     if ($imageError) {
                         $imageUploadErrors[] = [

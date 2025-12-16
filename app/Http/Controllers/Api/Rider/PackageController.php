@@ -31,7 +31,7 @@ class PackageController extends Controller
                     'delivered',         // Delivered packages
                     'cancelled'          // Cancelled, rider needs to return to office
                 ])
-                ->with(['merchant', 'statusHistory'])
+                ->with(['merchant', 'statusHistory.changedBy'])
                 ->orderBy('created_at', 'desc')
                 ->get();
         } else {
@@ -47,7 +47,7 @@ class PackageController extends Controller
                     'on_the_way',        // Currently being delivered
                     'cancelled'          // Cancelled, rider needs to return to office
                 ])
-                ->with(['merchant', 'statusHistory'])
+                ->with(['merchant', 'statusHistory.changedBy'])
                 ->orderBy('created_at', 'desc')
                 ->get();
         }
@@ -60,7 +60,7 @@ class PackageController extends Controller
         $rider = $request->user()->rider;
         
         $package = Package::where('current_rider_id', $rider->id)
-            ->with(['merchant', 'statusHistory', 'deliveryProof', 'codCollection'])
+            ->with(['merchant', 'statusHistory.changedBy', 'deliveryProof', 'codCollection'])
             ->findOrFail($id);
 
         return response()->json($package);
@@ -276,23 +276,23 @@ class PackageController extends Controller
 
         // Handle proof upload (optional)
         if ($request->has('proof_type') && $request->has('proof_data')) {
-            $proofData = $request->proof_data;
-            if ($request->proof_type === 'photo' && $request->hasFile('proof_data')) {
-                $proofData = $request->file('proof_data')->store('delivery_proofs', 'public');
-            }
+        $proofData = $request->proof_data;
+        if ($request->proof_type === 'photo' && $request->hasFile('proof_data')) {
+            $proofData = $request->file('proof_data')->store('delivery_proofs', 'public');
+        }
 
-            DeliveryProof::create([
-                'package_id' => $package->id,
-                'rider_id' => $rider->id,
-                'proof_type' => $request->proof_type,
-                'proof_data' => $proofData,
-                'delivery_latitude' => $request->delivery_latitude,
-                'delivery_longitude' => $request->delivery_longitude,
-                'delivered_to_name' => $request->delivered_to_name,
-                'delivered_to_phone' => $request->delivered_to_phone,
-                'notes' => $request->notes,
-                'created_at' => now(),
-            ]);
+        DeliveryProof::create([
+            'package_id' => $package->id,
+            'rider_id' => $rider->id,
+            'proof_type' => $request->proof_type,
+            'proof_data' => $proofData,
+            'delivery_latitude' => $request->delivery_latitude,
+            'delivery_longitude' => $request->delivery_longitude,
+            'delivered_to_name' => $request->delivered_to_name,
+            'delivered_to_phone' => $request->delivered_to_phone,
+            'notes' => $request->notes,
+            'created_at' => now(),
+        ]);
         }
 
         // Update package status to delivered

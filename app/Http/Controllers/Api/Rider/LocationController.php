@@ -140,6 +140,13 @@ class LocationController extends Controller
     public function store(Request $request)
     {
         try {
+            $sharedSecret = env('TRACKER_SHARED_SECRET');
+            if ($sharedSecret && $request->header('X-Tracker-Secret') !== $sharedSecret) {
+                return response()->json([
+                    'message' => 'Unauthorized tracker request',
+                ], 401);
+            }
+
             $request->validate([
                 'rider_id' => 'required|exists:riders,id',
                 'latitude' => 'required|numeric',
@@ -199,5 +206,30 @@ class LocationController extends Controller
                 'message' => 'Failed to store location',
             ], 500);
         }
+    }
+
+    /**
+     * Send location to Go WebSocket server (best-effort).
+     * Guarded by env so missing config won't break location updates.
+     */
+    private function sendToGoServer(int $riderId, float $latitude, float $longitude, $packageId = null): void
+    {
+        $goEndpoint = env('GO_WS_LOCATION_URL');
+        $goToken = env('GO_WS_TOKEN');
+
+        if (!$goEndpoint) {
+            // Not configured; skip silently.
+            return;
+        }
+
+        Http::timeout(3)
+            ->withToken($goToken)
+            ->post($goEndpoint, [
+                'rider_id' => $riderId,
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'package_id' => $packageId,
+                'sent_at' => now()->toIso8601String(),
+            ]);
     }
 }

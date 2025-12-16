@@ -109,8 +109,8 @@
                 return;
             }
             
-            // Default center - Yangon, Myanmar
-            const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
+        // Default center - Yangon, Myanmar
+        const defaultCenter = [96.1951, 16.8661]; // [lng, lat] for MapLibre - Yangon, Myanmar
             
             // Check if maplibregl is loaded
             if (typeof maplibregl === 'undefined') {
@@ -123,74 +123,74 @@
             }
             
             console.log('Initializing map...');
-            
-            map = new maplibregl.Map({
-                container: 'map',
-                // Using MapTiler Streets v2 style
-                style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
-                center: defaultCenter,
-                zoom: 12,
-                minZoom: 0,
-                maxZoom: 22, // MapTiler supports up to zoom 22
-                // Performance optimizations
-                antialias: false,
-                preserveDrawingBuffer: false,
-                fadeDuration: 0
-            });
+        
+        map = new maplibregl.Map({
+            container: 'map',
+            // Using MapTiler Streets v2 style
+            style: 'https://api.maptiler.com/maps/streets-v2/style.json?key=2FU1Toy7etAR00Vzt5Ho',
+            center: defaultCenter,
+            zoom: 12,
+            minZoom: 0,
+            maxZoom: 22, // MapTiler supports up to zoom 22
+            // Performance optimizations
+            antialias: false,
+            preserveDrawingBuffer: false,
+            fadeDuration: 0
+        });
 
-            // Add navigation controls
-            map.addControl(new maplibregl.NavigationControl(), 'top-right');
+        // Add navigation controls
+        map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-            // Prevent zooming beyond limits to avoid white screen
-            const minZoom = 0;
-            const maxZoom = 22; // MapTiler supports up to zoom 22
+        // Prevent zooming beyond limits to avoid white screen
+        const minZoom = 0;
+        const maxZoom = 22; // MapTiler supports up to zoom 22
+        
+        // Clamp zoom level when zoom ends to prevent white screen
+        map.on('zoomend', function() {
+            const currentZoom = map.getZoom();
             
-            // Clamp zoom level when zoom ends to prevent white screen
-            map.on('zoomend', function() {
-                const currentZoom = map.getZoom();
-                
-                // Clamp zoom level if it exceeds limits
-                if (currentZoom < minZoom) {
-                    map.setZoom(minZoom);
-                } else if (currentZoom > maxZoom) {
-                    map.setZoom(maxZoom);
-                }
-            });
+            // Clamp zoom level if it exceeds limits
+            if (currentZoom < minZoom) {
+                map.setZoom(minZoom);
+            } else if (currentZoom > maxZoom) {
+                map.setZoom(maxZoom);
+            }
+        });
+        
+        // Also clamp during zoom to prevent going beyond limits
+        map.on('zoom', function() {
+            const currentZoom = map.getZoom();
             
-            // Also clamp during zoom to prevent going beyond limits
-            map.on('zoom', function() {
-                const currentZoom = map.getZoom();
-                
-                // Clamp zoom level if it exceeds limits
-                if (currentZoom < minZoom) {
-                    map.setZoom(minZoom);
-                } else if (currentZoom > maxZoom) {
-                    map.setZoom(maxZoom);
-                }
-            });
+            // Clamp zoom level if it exceeds limits
+            if (currentZoom < minZoom) {
+                map.setZoom(minZoom);
+            } else if (currentZoom > maxZoom) {
+                map.setZoom(maxZoom);
+            }
+        });
 
-            // Wait for map to load before adding markers
-            map.on('load', function() {
+        // Wait for map to load before adding markers
+        map.on('load', function() {
                 console.log('Map loaded successfully');
-                // Hide loading indicator
-                const loadingIndicator = document.getElementById('mapLoading');
-                if (loadingIndicator) {
-                    loadingIndicator.style.display = 'none';
-                }
-                // Load rider locations after map is ready
-                setTimeout(() => {
-                    loadRiderLocations();
-                }, 100); // Small delay to ensure map is fully rendered
-            });
-            
-            // Handle map errors
-            map.on('error', function(e) {
-                console.error('Map error:', e);
-                const loadingIndicator = document.getElementById('mapLoading');
-                if (loadingIndicator) {
-                    loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map. Please refresh the page.</p></div>';
-                }
-            });
+            // Hide loading indicator
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'none';
+            }
+            // Load rider locations after map is ready
+            setTimeout(() => {
+                loadRiderLocations();
+            }, 100); // Small delay to ensure map is fully rendered
+        });
+        
+        // Handle map errors
+        map.on('error', function(e) {
+            console.error('Map error:', e);
+            const loadingIndicator = document.getElementById('mapLoading');
+            if (loadingIndicator) {
+                loadingIndicator.innerHTML = '<div style="text-align: center; padding: 20px;"><p style="color: #ef4444;">Error loading map. Please refresh the page.</p></div>';
+            }
+        });
             
             // Handle style loading errors
             map.on('style.load', function() {
@@ -605,9 +605,9 @@
                 console.log('Received all rider locations:', locations);
                 // Only update markers, don't reset map view
                 if (Array.isArray(locations)) {
-                    locations.forEach(location => {
-                        updateRiderLocationOnMap(location);
-                    });
+                locations.forEach(location => {
+                    updateRiderLocationOnMap(location);
+                });
                 }
             });
             
