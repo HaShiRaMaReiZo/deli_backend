@@ -30,6 +30,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Merchant routes
     Route::prefix('merchant')->middleware('role:merchant')->group(function () {
+        // Routes with merchant_id in path - must come before routes without it
+        Route::get('/packages/{merchant_id}', [MerchantPackageController::class, 'index']);
+        
+        // Routes without merchant_id (uses authenticated user's merchant_id) - for backward compatibility
         Route::get('/packages', [MerchantPackageController::class, 'index']);
         Route::post('/packages/bulk', [MerchantPackageController::class, 'bulkStore']);
         
@@ -49,8 +53,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Rider routes
     Route::prefix('rider')->middleware('role:rider')->group(function () {
+        // Routes with rider_id in path - must come before routes without it
+        Route::get('/packages/{rider_id}/history', [RiderPackageController::class, 'history']);
+        
+        // Routes without rider_id (uses authenticated user's rider_id)
         Route::get('/packages', [RiderPackageController::class, 'index']);
-        Route::get('/packages/history', [RiderPackageController::class, 'history']);
         Route::get('/packages/{id}', [RiderPackageController::class, 'show']);
         Route::put('/packages/{id}/status', [RiderPackageController::class, 'updateStatus']);
         Route::post('/packages/{id}/receive-from-office', [RiderPackageController::class, 'receiveFromOffice']);

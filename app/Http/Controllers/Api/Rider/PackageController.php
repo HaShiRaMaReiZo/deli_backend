@@ -478,9 +478,20 @@ class PackageController extends Controller
      * This endpoint returns packages that were delivered in the current month
      * (e.g., if it's January, only January deliveries; if February, only February, etc.)
      */
-    public function history(Request $request)
+    /**
+     * Get delivery history for current month
+     * Route: GET /api/rider/packages/{rider_id}/history
+     */
+    public function history(Request $request, $rider_id)
     {
-        $rider = $request->user()->rider;
+        $user = $request->user();
+        
+        // Validate that the rider_id in the path matches the authenticated user's rider_id
+        if ($user->rider_id != $rider_id) {
+            return response()->json([
+                'message' => 'Unauthorized: You can only access your own history'
+            ], 403);
+        }
         
         // Get current month start and end dates
         $now = now();
@@ -488,7 +499,7 @@ class PackageController extends Controller
         $endOfMonth = $now->copy()->endOfMonth();
         
         // Get delivered packages for current month only
-        $packages = Package::where('current_rider_id', $rider->id)
+        $packages = Package::where('current_rider_id', $rider_id)
             ->where('status', 'delivered')
             ->whereNotNull('delivered_at')
             ->whereBetween('delivered_at', [$startOfMonth, $endOfMonth])
