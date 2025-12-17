@@ -30,10 +30,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Merchant routes
     Route::prefix('merchant')->middleware('role:merchant')->group(function () {
-        // Routes with merchant_id in path - must come before routes without it
-        Route::get('/packages/{merchant_id}', [MerchantPackageController::class, 'index']);
-        
-        // Routes without merchant_id (uses authenticated user's merchant_id) - for backward compatibility
+        // Package routes (scoped to authenticated merchant)
         Route::get('/packages', [MerchantPackageController::class, 'index']);
         Route::post('/packages/bulk', [MerchantPackageController::class, 'bulkStore']);
         

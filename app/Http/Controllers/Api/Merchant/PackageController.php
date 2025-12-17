@@ -18,38 +18,22 @@ use PDOException;
 class PackageController extends Controller
 {
     /**
-     * Get packages for merchant
-     * Route: GET /api/merchant/packages/{merchant_id} or GET /api/merchant/packages
+     * Get packages for authenticated merchant
+     * Route: GET /api/merchant/packages
      */
-    public function index(Request $request, $merchant_id = null)
+    public function index(Request $request)
     {
-        $user = $request->user();
-        
-        // Get merchant - prefer merchant_id field, fallback to relationship
-        $merchant = $user->merchant;
+        $merchant = $request->user()->merchant;
         if (!$merchant) {
             return response()->json([
-                'message' => 'Merchant profile not found'
+                'message' => 'Merchant profile not found',
             ], 404);
         }
-        
-        // If merchant_id is provided in path, validate it matches authenticated user
-        if ($merchant_id !== null) {
-            if ($merchant->id != $merchant_id) {
-                return response()->json([
-                    'message' => 'Unauthorized: You can only access your own packages'
-                ], 403);
-            }
-            $merchantId = $merchant_id;
-        } else {
-            // Use merchant ID from relationship (works even if merchant_id column is null)
-            $merchantId = $merchant->id;
-        }
-        
+
         // Only load necessary relationships - statusHistory is heavy and not needed for list view
         // Only load specific columns to reduce data transfer
         // Exclude draft packages from regular list
-        $packages = Package::where('merchant_id', $merchantId)
+        $packages = Package::where('merchant_id', $merchant->id)
             ->where('is_draft', false)
             ->with(['currentRider:id,name,phone', 'statusHistory' => function ($query) {
                 // Only get the latest status history entry for each package
