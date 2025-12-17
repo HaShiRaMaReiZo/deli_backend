@@ -25,17 +25,25 @@ class PackageController extends Controller
     {
         $user = $request->user();
         
+        // Get merchant - prefer merchant_id field, fallback to relationship
+        $merchant = $user->merchant;
+        if (!$merchant) {
+            return response()->json([
+                'message' => 'Merchant profile not found'
+            ], 404);
+        }
+        
         // If merchant_id is provided in path, validate it matches authenticated user
         if ($merchant_id !== null) {
-            if ($user->merchant_id != $merchant_id) {
+            if ($merchant->id != $merchant_id) {
                 return response()->json([
                     'message' => 'Unauthorized: You can only access your own packages'
                 ], 403);
             }
             $merchantId = $merchant_id;
         } else {
-            // Use authenticated user's merchant_id (backward compatibility)
-            $merchantId = $user->merchant_id;
+            // Use merchant ID from relationship (works even if merchant_id column is null)
+            $merchantId = $merchant->id;
         }
         
         // Only load necessary relationships - statusHistory is heavy and not needed for list view

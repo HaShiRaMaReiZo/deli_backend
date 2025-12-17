@@ -13,20 +13,31 @@ return new class extends Migration
     public function up(): void
     {
         // Populate merchant_id for users who have a merchant profile
-        DB::statement('
-            UPDATE users u
-            INNER JOIN merchants m ON u.id = m.user_id
-            SET u.merchant_id = m.id
-            WHERE u.role = "merchant"
-        ');
+        // Using Laravel's query builder for better compatibility
+        $merchants = DB::table('merchants')
+            ->join('users', 'merchants.user_id', '=', 'users.id')
+            ->where('users.role', 'merchant')
+            ->select('users.id as user_id', 'merchants.id as merchant_id')
+            ->get();
+
+        foreach ($merchants as $merchant) {
+            DB::table('users')
+                ->where('id', $merchant->user_id)
+                ->update(['merchant_id' => $merchant->merchant_id]);
+        }
 
         // Populate rider_id for users who have a rider profile
-        DB::statement('
-            UPDATE users u
-            INNER JOIN riders r ON u.id = r.user_id
-            SET u.rider_id = r.id
-            WHERE u.role = "rider"
-        ');
+        $riders = DB::table('riders')
+            ->join('users', 'riders.user_id', '=', 'users.id')
+            ->where('users.role', 'rider')
+            ->select('users.id as user_id', 'riders.id as rider_id')
+            ->get();
+
+        foreach ($riders as $rider) {
+            DB::table('users')
+                ->where('id', $rider->user_id)
+                ->update(['rider_id' => $rider->rider_id]);
+        }
     }
 
     /**

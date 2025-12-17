@@ -15,7 +15,14 @@ class PackageController extends Controller
 {
     public function index(Request $request)
     {
-        $rider = $request->user()->rider;
+        $user = $request->user();
+        $rider = $user->rider;
+        
+        if (!$rider) {
+            return response()->json([
+                'message' => 'Rider profile not found'
+            ], 404);
+        }
         
         // Check if we need to include delivered packages
         $includeDelivered = $request->query('include_delivered', 'false') === 'true' || $request->query('include_delivered') === true;
@@ -57,7 +64,14 @@ class PackageController extends Controller
 
     public function show(Request $request, $id)
     {
-        $rider = $request->user()->rider;
+        $user = $request->user();
+        $rider = $user->rider;
+        
+        if (!$rider) {
+            return response()->json([
+                'message' => 'Rider profile not found'
+            ], 404);
+        }
         
         $package = Package::where('current_rider_id', $rider->id)
             ->with(['merchant', 'statusHistory.changedBy', 'deliveryProof', 'codCollection'])
@@ -485,9 +499,17 @@ class PackageController extends Controller
     public function history(Request $request, $rider_id)
     {
         $user = $request->user();
+        $rider = $user->rider;
         
-        // Validate that the rider_id in the path matches the authenticated user's rider_id
-        if ($user->rider_id != $rider_id) {
+        if (!$rider) {
+            return response()->json([
+                'message' => 'Rider profile not found'
+            ], 404);
+        }
+        
+        // Validate that the rider_id in the path matches the authenticated user's rider
+        // Use relationship ID (works even if rider_id column is null)
+        if ($rider->id != $rider_id) {
             return response()->json([
                 'message' => 'Unauthorized: You can only access your own history'
             ], 403);
